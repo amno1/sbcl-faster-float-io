@@ -18,9 +18,9 @@
 (defun map-combinations (function value-lists)
   (labels ((walk (lists chosen)
              (if (endp lists)
-                 (funcall function (reverse chosen))
+                 (funcall function chosen)
                  (dolist (value (first lists))
-                   (walk (rest lists) (cons value chosen))))))
+                   (walk (rest lists) (append chosen (list value)))))))
     (walk value-lists '())))
 
 ;;; The text of FILE, a path such as "src/code/print.lisp", as it was in the
