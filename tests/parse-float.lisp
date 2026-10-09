@@ -28,6 +28,23 @@
 
 (defparameter *fast-function* (fdefinition 'make-float/fast))
 
+;;; Builds with the READ-TOKEN fast path (branch sbcl-read-fast) convert
+;;; most floats with Eisel-Lemire before MAKE-FLOAT/FAST is reached, so
+;;; the exact side switches that off too.
+(defparameter *token-fast-function*
+  (let ((name (find-symbol "READ-NUMBER/FAST" "SB-IMPL")))
+    (and name (fboundp name) (fdefinition name))))
+
+(defun read-exactly (string)
+  (sb-ext:without-package-locks
+    (setf (fdefinition 'make-float/fast) (constantly nil))
+    (when *token-fast-function*
+      (setf (fdefinition 'read-number/fast) (constantly nil))))
+  (unwind-protect (read-outcome string)
+    (when *token-fast-function*
+      (sb-ext:without-package-locks
+        (setf (fdefinition 'read-number/fast) *token-fast-function*)))))
+
 (defun test (string)
   (incf *checked*)
   (let* ((fast (progn
@@ -38,10 +55,7 @@
                              (when x (incf *fast*))
                              x))))
                  (read-outcome string)))
-         (exact (progn
-                  (sb-ext:without-package-locks
-                    (setf (fdefinition 'make-float/fast) (constantly nil)))
-                  (read-outcome string))))
+         (exact (read-exactly string)))
     (unless (equal fast exact)
       (cl-user::fail (*failures*)
         "FAIL ~S (~A): fast ~S, exact ~S~%"
