@@ -58,7 +58,7 @@ platforms use the portable version of the same function (BCD via multiply and
 shift). `print-float` and `flonum-to-digits` write or copy that buffer directly
 instead of taking one callback per digit. Compared with the previous BCD
 version, `prin1` to a null stream went from 144 to 70 ns for doubles. Most of
-what remains in `prin1-to-string` is the string stream.
+what remains in `prin1-to-string` is the string stream machinery.
 
 Tests: [`fallback.lisp`](tests/fallback.lisp) (the portable version against the
 SSE2 VOP), and every printing test through the printer. Benchmark:
@@ -144,16 +144,16 @@ before. `format-fixed.lisp` disables every fast path by replacing
 original code. In three consistent runs: `(format nil "~,2F")` went from 135 to
 110-115 ns (original: 385), and `~$` from 140 to 125 ns (original: 400).
 
-`~E`: `format-exp-aux` lays out the significand with `flonum-to-buffer`
-and writes the exponent's digits into a small stack buffer instead of
-calling `decimal-string`, which ran `write-to-string` through a string
-stream. In three consistent runs, `(format nil "~,3E")` went from 240 to
-165 ns (original: about 370).
+`~E`: `format-exp-aux` lays out the significand with `flonum-to-buffer` and
+writes the exponent's digits into a small stack buffer instead of calling
+`decimal-string`, which ran `write-to-string` through a string stream. In three
+consistent runs, `(format nil "~,3E")` went from 240 to 165 ns (original: about
+370).
 
 Tests: [`buffer.lisp`](tests/buffer.lisp) (the buffer against
-`flonum-to-string`), [`exponential.lisp`](tests/exponential.lisp) (`~E`
-against the original), [`format-fixed.lisp`](tests/format-fixed.lisp).
-Benchmark: [`format-bench.lisp`](benchmarks/format-bench.lisp).
+`flonum-to-string`), [`exponential.lisp`](tests/exponential.lisp) (`~E` against
+the original), [`format-fixed.lisp`](tests/format-fixed.lisp).  Benchmark:
+[`format-bench.lisp`](benchmarks/format-bench.lisp).
 
 ### Width only: `~wF`
 
@@ -177,10 +177,10 @@ original's interval is the float's own rounding interval, made closed. Its
 result is then the shortest decimal in that closed interval, which is zmij with
 a new `closed` option (the interval includes its endpoints even for an odd
 significand). Powers of two (asymmetric interval), the mixed zone and subnormals
-still fall back. `fixed.lisp` includes odd-significand doubles and singles
-above 2^53 and 2^24, where interval endpoints are short decimals; about 9% of
-those print differently closed vs open, and all match the original. `(format
-nil "~G")` went from about 485 to 300 ns.
+still fall back. `fixed.lisp` includes odd-significand doubles and singles above
+2^53 and 2^24, where interval endpoints are short decimals; about 9% of those
+print differently closed vs open, and all match the original. `(format nil
+"~G")` went from about 485 to 300 ns.
 
 `~G` without a digit count needs the shortest digits' exponent and their printed
 length, and used to generate the digits twice for them (`flonum-exponent`, then
@@ -325,14 +325,14 @@ float index)`, with the same argument handling, whitespace rules and errors as
 S, F, D and L, plus plain integers ("12", "12.") as floats; the marker or
 `*read-default-float-format*` decides the type.
 
-`parse-float` scans the string itself, collecting up to 19 significant digits. It then calls the
-same `decimal-to-float` as the reader. With more digits, or when the fast path
-returns NIL, it builds the exact value as MAKE-FLOAT does (the digits as an
-integer, scaled by a power of ten) and converts that; a number too large for its
-format signals a `parse-error`, as the reader does. On 32-bit platforms only the
-exact code is used. Since no reader, readtable or string stream is involved, it
-is about 3 to 4.5 times faster than `read-from-string` on the same strings
-([readme.md](readme.md), "Results").
+`parse-float` scans the string itself, collecting up to 19 significant
+digits. It then calls the same `decimal-to-float` as the reader. With more
+digits, or when the fast path returns NIL, it builds the exact value as
+MAKE-FLOAT does (the digits as an integer, scaled by a power of ten) and
+converts that; a number too large for its format signals a `parse-error`, as the
+reader does. On 32-bit platforms only the exact code is used. Since no reader,
+readtable or string stream is involved, it is about 3 to 4.5 times faster than
+`read-from-string` on the same strings ([readme.md](readme.md), "Results").
 
 Tests: [`parse-float-function.lisp`](tests/parse-float-function.lisp) (against
 the reader, an exact reference, and `parse-integer`'s interface),

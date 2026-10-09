@@ -29,7 +29,7 @@ use it myself.
 
 ## In short
 
-- **Printing** a float with `prin1`, `princ`, `~A` or `~S` is about **5x
+  **Printing** a float with `prin1`, `princ`, `~A` or `~S` is about **5x
   faster** for values of moderate size (0.1 to 10^7) and **2-6x** on
   real-world data. The gain grows with the size of the exponent, because
   the old algorithm computed with integers of hundreds of digits for very
@@ -39,25 +39,25 @@ use it myself.
   to 68x faster, but the rest of printing (layout and streams) did not get
   that much faster.
 
-- **`format` float directives** (`~F`, `~E`, `~G`, `~$`) are about 4-6x
+  **`format` float directives** (`~F`, `~E`, `~G`, `~$`) are about 4-6x
   faster for values of moderate size, and 5-13x for small values (0.001
   to 0.1).
 
-- **Reading** floats is about 1.3-1.7x faster for short and ordinary
+  **Reading** floats is about 1.3-1.7x faster for short and ordinary
   numbers (1.1-1.8x on real-world data) and about 6x faster for doubles
   with large exponents. A new function, **`sb-ext:parse-float`**, parses a
   float from a string like `parse-integer` parses an integer, 3-4.5x faster
   than `read-from-string`, and 5-6x faster than reading was before on
   real-world data.
 
-- **Output is unchanged**, with one deliberate exception: subnormal floats
+  **Output is unchanged**, with one deliberate exception: subnormal floats
   (the tiny numbers below about 1e-308 for doubles and 1e-38 for singles)
   now print with their shortest digits, e.g. `1.42954e-39` instead of
   `1.4295402e-39`. Both read back as the same float.
 
-- **Read results are unchanged.**
+  **Read results are unchanged.**
 
-- The fast paths are for **64-bit platforms**. 32-bit platforms keep the
+  The fast paths are for **64-bit platforms**. 32-bit platforms keep the
   original code.
 
 ## Why
@@ -69,8 +69,8 @@ microseconds, and reading one with a large exponent about 1.2
 microseconds. Programs that write or read a lot of numbers, such as data files,
 CSV, JSON, logs or numeric output, spend much of their time there.
 
-Since 2018, a series of algorithms (Ryu, Schubfach, Dragonbox, and most
-recently zmij) print floats with a few 64-bit and 128-bit multiplications and a table of
+Since 2018, a series of algorithms (Ryu, Schubfach, Dragonbox, and most recently
+zmij) print floats with a few 64-bit and 128-bit multiplications and a table of
 powers of ten. On the reading side, the Eisel-Lemire algorithm, used by
 `fast_float`, Rust, Go and .NET, does the same in the other direction. These
 patches bring both to SBCL.
@@ -103,16 +103,18 @@ normal float prints exactly as before.
 
 ### 2. The `format` float directives
 
-`~F`, `~E`, `~G` and `~$` with a digit count use a different, fixed-precision mode of the old algorithm, with its own rounding rules. Instead of replacing it,
+`~F`, `~E`, `~G` and `~$` with a digit count use a different, fixed-precision
+mode of the old algorithm, with its own rounding rules. Instead of replacing it,
 the patches add **exact fast paths that compute the same result** (the reasoning
 is in [details.md](details.md), and tests compare them with the original on
 millions of values), and fall back to the original code for anything else.
 
 For the common case, where the requested precision is coarser than the float's
-own, the old algorithm's result is just the value rounded to that position. That is computed with exact integer arithmetic, a shift and a mask,
-including the old algorithm's tie rule, which is neither round-half-up
-nor round-half-to-even (10.5 rounds to 10, but 12.5 to 13), and its
-handling of values that round to zero.
+own, the old algorithm's result is just the value rounded to that position. That
+is computed with exact integer arithmetic, a shift and a mask, including the old
+algorithm's tie rule, which is neither round-half-up nor round-half-to-even
+(10.5 rounds to 10, but 12.5 to 13), and its handling of values that round to
+zero.
 
 When the requested precision is finer than the float's (e.g. `~G` without a
 digit count, or `~,20F`), the old algorithm's result is the shortest decimal in
@@ -141,8 +143,8 @@ accepts the reader's float syntax, plus plain integers, and returns what the
 reader would, without the reader, readtable or stream. It is documented in the
 manual.
 
-The original algorithms stay in SBCL: they are the fallback for the rare
-cases and for 32-bit platforms, and the definition of correct output.
+The original algorithms stay in SBCL: they are the fallback for the rare cases
+and for 32-bit platforms, and the definition of correct output.
 
 ## How we know it is correct
 
@@ -152,16 +154,15 @@ exact mathematical reference, never against the new code's own expectations.
 
 Two self-contained regression tests are added to SBCL's own test suite,
 `tests/float-print.pure.lisp` and `tests/float-parse.pure.lisp`. The patches
-pass SBCL's CI on GitHub, including the builds hosted by CLISP, CCL,
-CMUCL and ECL, and the check that CLISP, CCL and CMUCL compile SBCL to
-the same bytes as SBCL itself does. Besides these regression tests, the
-much longer test scripts used during the work are in this folder and
-described in [`tests.md`](tests.md).
+pass SBCL's CI on GitHub, including the builds hosted by CLISP, CCL, CMUCL and
+ECL, and the check that CLISP, CCL and CMUCL compile SBCL to the same bytes as
+SBCL itself does. Besides these regression tests, the much longer test scripts
+used during the work are in this folder and described in [`tests.md`](tests.md).
 
 ## Results
 
-All numbers in this section were measured on 2026-10-09 in one session,
-on x86-64 (my laptop, on mains power), in nanoseconds per call, best of 9
+All numbers in this section were measured on 2026-10-09 in one session, on
+x86-64 (my laptop, on mains power), in nanoseconds per call, best of 9
 runs. "Before" is plain upstream SBCL at commit
 [`c2aca591d`](https://github.com/sbcl/sbcl/commit/c2aca591d); "after" is the
 [`sbcl-zmij`](https://github.com/amno1/sbcl/tree/sbcl-zmij) branch for printing
@@ -196,10 +197,10 @@ falls in it.
 | `(format nil "~$" x)`               |                 430 |   105 |                  435 |    90 |
 | `(format nil "~12F" x)`, width only |               1,030 |   265 |                1,660 |   340 |
 
-The second pair of columns is for small values, from 0.001 to 0.1. The old
-code is much slower there for most directives, because their shortest digits
-start far to the right of the point; `~,2F` and `~$` of values below 0.01 take
-another path, which was already fast.
+The second pair of columns is for small values, from 0.001 to 0.1. The old code
+is much slower there for most directives, because their shortest digits start
+far to the right of the point; `~,2F` and `~$` of values below 0.01 take another
+path, which was already fast.
 
 **Reading** with `read-from-string`, the fast path on and off in the same build:
 
@@ -261,7 +262,8 @@ How much of each file lies in the 0.1 to 10^7 range of the tables above:
 Most of the rest are values between 0.001 and 0.1 (85% of the neural-network
 weights), zeros, or values below 0.001 (22% of `noaa_gfs_1p00`). Printing small
 values is no slower: shortest output does not depend on magnitude, and the files
-with many small values gain as much as the others. For `format`, the table above also shows values between 0.001 and 0.1.
+with many small values gain as much as the others. For `format`, the table above
+also shows values between 0.001 and 0.1.
 
 What remains in `prin1`, `format` and `read-from-string` is now mostly their
 general machinery (streams, directive handling, the reader), not the float
@@ -269,12 +271,12 @@ conversion.
 
 ## Compared with float-parsing libraries
 
-`sb-ext:parse-float` against two Quicklisp libraries that parse floats
-from strings: [`parse-float`](https://github.com/soemraws/parse-float)
+`sb-ext:parse-float` against two Quicklisp libraries that parse floats from
+strings: [`parse-float`](https://github.com/soemraws/parse-float)
 (`parse-float:parse-float`) and
 [`parse-number`](https://github.com/sharplispers/parse-number)
-(`parse-number:parse-number`), with `read-from-string` for reference.
-The test is `third-party.lisp`.
+(`parse-number:parse-number`), with `read-from-string` for reference.  The test
+is `third-party.lisp`.
 
 **Correctness**: 1,000,000 random doubles and 1,000,000 random singles (both
 signs, subnormals included) printed with `prin1-to-string` and parsed back. A
@@ -294,8 +296,8 @@ large and very small values (233 doubles, 3,270 singles). `parse-number` builds
 the exact value as a rational and converts it once, so it is always right.
 
 **Speed**, nanoseconds per string, best of 7, on strings that this test
-generates itself (so `read-from-string` differs slightly from the reading
-tables above):
+generates itself (so `read-from-string` differs slightly from the reading tables
+above):
 
 |                                | `sb-ext:parse-float` | `parse-float` | `parse-number` | `read-from-string` |
 |--------------------------------|---------------------:|--------------:|---------------:|-------------------:|
@@ -314,73 +316,80 @@ exponents.
 
 Most notable is **subnormals print shorter**: e.g. `1.42954e-39` instead of
 `1.4295402e-39`. The old printer gave them more digits than needed. Both forms
-read back as the same float. This only matters to code that depends on the exact printed digits of
-subnormals, which I expect to be rare.
+read back as the same float. This only matters to code that depends on the exact
+printed digits of subnormals, which I expect to be rare.
 
-There is a new function, **`sb-ext:parse-float`**, which uses the
-faster float parser directly, without going through the Lisp reader. That saves the reader's own overhead, roughly 70-140 ns per number: it is
-3-4.5x faster than `read-from-string`, and 5-18x faster than reading floats
-was before these patches.
+There is a new function, **`sb-ext:parse-float`**, which uses the faster float
+parser directly, without going through the Lisp reader. That saves the reader's
+own overhead, roughly 70-140 ns per number: it is 3-4.5x faster than
+`read-from-string`, and 5-18x faster than reading floats was before these
+patches.
 
-A compiler transform for **`(format nil "<one float directive>" x)`**.
-The output is the same, and in ordinary use the change is not visible,
-but the disassembled code looks different.
+A compiler transform for **`(format nil "<one float directive>" x)`**.  The
+output is the same, and in ordinary use the change is not visible, but the
+disassembled code looks different.
 
-Before, the call compiled to code that creates a string stream, writes
-the number into it through the `~F` machinery, and returns the stream's
-contents.
+Before, the call compiled to code that creates a string stream, writes the
+number into it through the `~F` machinery, and returns the stream's contents.
 
 Now it compiles to a direct call to a new internal function,
 `sb-format::format-fixed-string` (or `format-exponential-string`,
-`format-general-string` and `format-dollars-string` for `~E`, `~G` and
-`~$`), which builds the result string without a stream. That saves
-about 20-50 ns per call.
+`format-general-string` and `format-dollars-string` for `~E`, `~G` and `~$`),
+which builds the result string without a stream. That saves about 20-50 ns per
+call.
 
 The result is the same string; the test compares compiled and interpreted format
 on every kind of input.
 
-It is listed because it changes what SBCL generates: a disassembly
-shows a call to the new function instead of the old sequence, and
-tracing or redefining SBCL's internal `format` functions, e.g.
-`(trace sb-format::format-fixed-aux)`, no longer catches these calls,
-because they do not go through those functions any more.
+It is listed because it changes what SBCL generates: a disassembly shows a call
+to the new function instead of the old sequence, and tracing or redefining
+SBCL's internal `format` functions, e.g.  `(trace sb-format::format-fixed-aux)`,
+no longer catches these calls, because they do not go through those functions
+any more.
 
 Everything else prints and reads exactly as before, including how exact ties
 round in `~F`, `~E` and `~G`. The aim was to disrupt as little as possible.
 
 ## Limits, what was left out and possible improvements
 
-32-bit platforms keep the original code for everything: both zmij and Eisel-Lemire
-need 64-bit integer arithmetic.
+32-bit platforms keep the original code for everything: both zmij and
+Eisel-Lemire need 64-bit integer arithmetic.
 
-A few rare cases still use the original code, so they are correct but
-not faster:
+A few rare cases still use the original code, so they are correct but not
+faster.
 
-- **`format`, values below one unit at a position in the ones place or
-  higher**, when they don't round up to that unit: typically `~,0F`, as
-  in `(format nil "~,0F" 0.4)` or `(format nil "~,0F" 0.5)`, and `~E`,
-  `~G` or a width-only `~wF` when they end up asking for such a
-  position. The original algorithm's results there are odd: for 0.4 at
-  position 0 it returns the digit "4", not "0". Values that round up,
-  like 0.6 with `~,0F`, are fast, and so are all such values at
-  positions after the decimal point, like `(format nil "~,2F" 0.001)`.
-- **`format`, exact powers of two at precisions finer than the float's
-  own spacing**, e.g. 1.0, 2.0, 0.5 or 1024.0 with `~,20F`, or under
-  `~G` without a digit count. A power of two has a lopsided rounding
-  interval, so the shortcut doesn't apply.
-- **`format`, subnormals at precisions finer than their spacing.** The
-  original algorithm deliberately uses a narrower interval for them.
-- **Reading numbers with more than 19 significant digits.** Eisel-Lemire
-  is only proven correct up to 19 digits.
+In **`format`**:
 
-No shared tables: zmij and Eisel-Lemire use nearly the same 128-bit powers of
-ten (589 of 616 overlapping entries are identical; 27 differ in the last bit by
-design). Sharing would save about 10 KB but couple the two together; I am not
-sure whether that should be done.
+- values below one unit at a position in the ones place or higher, when they
+  don't round up to that unit: typically `~,0F`, as in `(format nil "~,0F" 0.4)`
+  or `(format nil "~,0F" 0.5)`; also `~,0G` of such values, `~E` with a scale
+  factor of 0 or less and no decimals, like `(format nil "~,0,,0E" 0.4)`, and a
+  width-only `~wF` whose width leaves no room for decimals. Values that round
+  up, like 0.6 with `~,0F`, are fast, and so are all such values at positions
+  after the decimal point, like `(format nil "~,2F" 0.001)`. Plain `~,0E` is not
+  affected either, because it scales the significand to between 1 and 10.
 
-Not done, but possible: a fast path for reading more than 19 digits,
-speeding up `format` calls with several directives, and 32-bit
-versions of zmij and Eisel-Lemire.
+- exact powers of two at precisions finer than the float's own spacing, e.g.
+  1.0, 2.0, 0.5 or 1024.0 with `~,20F`, or under `~G` without a digit count. A
+  power of two has a lopsided rounding interval, so the shortcut doesn't apply.
+
+- subnormals at precisions finer than their spacing. The original algorithm
+  deliberately uses a narrower interval for them.
+
+In **reading**:
+
+- numbers written with more than 19 significant digits, such as
+  `0.10000000000000000000001`. Eisel-Lemire is only proven correct up to 19
+  digits, so these are read with the original code.
+
+No shared powers-of-ten tables: zmij and Eisel-Lemire use nearly the same
+128-bit powers of ten (589 of 616 overlapping entries are identical; 27 differ
+in the last bit by design). Sharing would save about 10 KB but couple the two
+together; I am not sure whether that should be done.
+
+Also, not done but possible: a fast path for reading more than 19 digits,
+speeding up `format` calls with several directives, and 32-bit versions of zmij
+and Eisel-Lemire.
 
 ## Things found along the way
 
@@ -406,9 +415,10 @@ Code generation can depend on the host Lisp:
 
 On 32-bit x86, loading a signaling NaN into a register fails CI:
 
-  SBCL uses the x87 FPU, and the CPU signals an error as soon as a signaling NaN is loaded from memory into an FPU register, even before any arithmetic is
-  done with it. On x86-64 that only happens when the NaN is used in a
-  calculation or comparison.
+  SBCL uses the x87 FPU, and the CPU signals an error as soon as a signaling NaN
+  is loaded from memory into an FPU register, even before any arithmetic is done
+  with it. On x86-64 that only happens when the NaN is used in a calculation or
+  comparison.
 
 On ARM floating-point overflow is not trapped:
 
@@ -418,8 +428,8 @@ On ARM floating-point overflow is not trapped:
 A bug in SBCL's reader, now fixed upstream:
 
   Testing against Nigel Tao's parse-number test data
-  ([`tests/supplemental.lisp`](tests/supplemental.lisp)) found that numbers with very many digits could be read as a wrong
-  value. `(read-from-string "<1000
+  ([`tests/supplemental.lisp`](tests/supplemental.lisp)) found that numbers with
+  very many digits could be read as a wrong value. `(read-from-string "<1000
   nines>d0")` returned `1.0d251` instead of signaling an error, and a tiny
   number with a negative exponent read as a much larger one; the `R` marker was
   also affected (`1r400` read as 10^358). The exponent limit in
