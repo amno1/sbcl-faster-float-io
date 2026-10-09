@@ -33,23 +33,38 @@
   (handler-case (with-output-to-string (s) (apply fn s x args))
     (error (c) (list :error (type-of c)))))
 
+;;; The values tried for each parameter of FORMAT-EXP-AUX, in its
+;;; argument order: w, d, e, k, overflow char, pad char, marker, @.
+(defparameter *parameter-values*
+  '((nil 1 6 10 15)
+    (nil 0 1 3 8)
+    (nil 1 2 3)
+    (1 0 2 -1 3)
+    (nil #\*)
+    (#\Space #\_)
+    (nil #\x)
+    (nil t)))
+
+;;; Call FUNCTION with every combination of one value from each list in
+;;; VALUE-LISTS, as a list, the first list varying slowest.
+(defun map-combinations (function value-lists)
+  (labels ((walk (lists chosen)
+             (if (endp lists)
+                 (funcall function (reverse chosen))
+                 (dolist (value (first lists))
+                   (walk (rest lists) (cons value chosen))))))
+    (walk value-lists '())))
+
 (defun test (x)
-  (dolist (w '(nil 1 6 10 15))
-    (dolist (d '(nil 0 1 3 8))
-      (dolist (e '(nil 1 2 3))
-        (dolist (k '(1 0 2 -1 3))
-          (dolist (ovf '(nil #\*))
-            (dolist (pad '(#\Space #\_))
-              (dolist (marker '(nil #\x))
-                (dolist (atsign '(nil t))
-                  (let ((args (list w d e k ovf pad marker atsign)))
-                    (incf *checked*)
-                    (let ((new (run #'format-exp-aux x args))
-                          (old (run #'reference-format-exp-aux x args)))
-                      (unless (equal new old)
-                        (when (< (incf *failures*) 30)
-                          (format t "FAIL ~S ~S: new ~S, original ~S~%"
-                                  x args new old))))))))))))))
+  (map-combinations
+   (lambda (args)
+     (incf *checked*)
+     (let ((new (run #'format-exp-aux x args))
+           (old (run #'reference-format-exp-aux x args)))
+       (unless (equal new old)
+         (when (< (incf *failures*) 30)
+           (format t "FAIL ~S ~S: new ~S, original ~S~%" x args new old)))))
+   *parameter-values*))
 
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))
