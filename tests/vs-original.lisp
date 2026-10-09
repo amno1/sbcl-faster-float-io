@@ -8,6 +8,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 ;;; src/code/print.lisp of the SBCL running this test.
 (defparameter *print-source*
   (namestring (merge-pathnames "../../src/code/print.lisp"
@@ -52,9 +54,8 @@
           (unless (and (= k1 k2) (string= s1 s2))
             (if (subnormalp x)
                 (incf *subnormal-differences*)
-                (when (< (incf *failures*) 30)
-                  (format t "FAIL ~S: original ~D ~S, zmij ~D ~S~%"
-                          x k1 s1 k2 s2)))))))))
+                (cl-user::fail (*failures*)
+                  "FAIL ~S: original ~D ~S, zmij ~D ~S~%" x k1 s1 k2 s2))))))))
 
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))

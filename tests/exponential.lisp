@@ -8,19 +8,9 @@
 
 (in-package "SB-FORMAT")
 
-(defparameter *original-source*
-  (let ((path "/tmp/original-target-format.lisp"))
-    (sb-ext:run-program
-     "/bin/sh"
-     (list "-c" (format nil "git -C ~A show ~A:src/code/target-format.lisp > ~A"
-                        (namestring (merge-pathnames "../../" (make-pathname :name nil :type nil :defaults sb-ext:*runtime-pathname*)))
-                        (or (sb-ext:posix-getenv "ORIGINAL_REV") "c7621755f")
-                        path)))
-    path))
+(load (merge-pathnames "common.lisp" *load-truename*))
 
-(let* ((text (with-open-file (s *original-source*)
-               (let ((string (make-string (file-length s))))
-                 (subseq string 0 (read-sequence string s)))))
+(let* ((text (cl-user::original-source "src/code/target-format.lisp"))
        (start (search "(defun format-exp-aux" text))
        (form (let ((*package* (find-package "SB-FORMAT")))
                (read-from-string text t nil :start start))))
@@ -45,25 +35,15 @@
     (nil #\x)
     (nil t)))
 
-;;; Call FUNCTION with every combination of one value from each list in
-;;; VALUE-LISTS, as a list, the first list varying slowest.
-(defun map-combinations (function value-lists)
-  (labels ((walk (lists chosen)
-             (if (endp lists)
-                 (funcall function (reverse chosen))
-                 (dolist (value (first lists))
-                   (walk (rest lists) (cons value chosen))))))
-    (walk value-lists '())))
-
 (defun test (x)
-  (map-combinations
+  (cl-user::map-combinations
    (lambda (args)
      (incf *checked*)
      (let ((new (run #'format-exp-aux x args))
            (old (run #'reference-format-exp-aux x args)))
        (unless (equal new old)
-         (when (< (incf *failures*) 30)
-           (format t "FAIL ~S ~S: new ~S, original ~S~%" x args new old)))))
+         (cl-user::fail (*failures*)
+           "FAIL ~S ~S: new ~S, original ~S~%" x args new old))))
    *parameter-values*))
 
 (let ((count (if (second sb-ext:*posix-argv*)

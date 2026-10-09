@@ -97,10 +97,11 @@
 
 (defun test (f)
   (unless (or (sb-ext:float-infinity-p f) (sb-ext:float-nan-p f) (zerop f))
-    (let ((problem (or (check f) (check-print f))))
-      (when problem
-        (when (< (incf *failures*) 50)
-          (format t "FAIL ~S: ~A~%" f problem))))))
+    (let ((problem (or (check f)
+                       (check-print f))))
+      (when (and problem
+                 (< (incf *failures*) 50))
+        (format t "FAIL ~S: ~A~%" f problem)))))
 
 (defun random-double (state)
   (sb-kernel:make-double-float (- (random (ash 1 32) state) (ash 1 31))

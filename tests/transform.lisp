@@ -11,6 +11,8 @@
 
 (in-package "SB-FORMAT")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defvar *failures* 0)
 (defvar *checked* 0)
 
@@ -59,16 +61,14 @@
     (let ((fn (compiled control)))
       (incf *checked*)
       (unless (calls-p fn (expected-function control))
-        (when (< (incf *failures*) 30)
-          (format t "FAIL ~S: transform did not fire~%" control)))
+        (cl-user::fail (*failures*) "FAIL ~S: transform did not fire~%" control))
       (dolist (x *values*)
         (incf *checked*)
         (let ((new (outcome (lambda () (funcall fn x))))
               (old (outcome (lambda () (format nil (copy-seq control) x)))))
           (unless (equal new old)
-            (when (< (incf *failures*) 30)
-              (format t "FAIL ~S ~S: compiled ~S, interpreted ~S~%"
-                      control x new old))))))))
+            (cl-user::fail (*failures*)
+              "FAIL ~S ~S: compiled ~S, interpreted ~S~%" control x new old)))))))
 
 ;;; Control strings the transform must leave alone.
 (dolist (control '("~VF" "~,VF" "~#F" "x=~,2F" "~,2F~%" "~:F" "~A" "~VE" "~:E"
@@ -79,8 +79,7 @@
            (some (lambda (name) (calls-p fn name))
                  '("FORMAT-FIXED-STRING" "FORMAT-EXPONENTIAL-STRING"
                    "FORMAT-GENERAL-STRING" "FORMAT-DOLLARS-STRING"))))
-    (when (< (incf *failures*) 30)
-      (format t "FAIL ~S: transform fired but should not~%" control))))
+    (cl-user::fail (*failures*) "FAIL ~S: transform fired but should not~%" control)))
 
 (format t "~:D checks~%" *checked*)
 (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp *failures*) *failures*)

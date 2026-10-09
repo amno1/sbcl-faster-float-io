@@ -14,6 +14,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defun reference-print-float (float stream)
   (multiple-value-bind (k digits) (flonum-to-digits (abs float))
     (let ((position 0)
@@ -51,10 +53,6 @@
 
 (defvar *failures* 0)
 
-(defun fail (control &rest args)
-  (when (< (incf *failures*) 30)
-    (apply #'format t control args)))
-
 ;;; PRIN1-TO-STRING and PRINC-TO-STRING (the string fast path), and PRIN1
 ;;; to a stream (PRINT-FLOAT), with and without *PRINT-PRETTY*.
 (defun test (x)
@@ -67,7 +65,7 @@
                            (princ-to-string x)
                            (with-output-to-string (s) (prin1 x s))))
           (unless (string= new old)
-            (fail "FAIL ~A pretty ~A ~S: printed ~S, expected ~S~%"
+            (cl-user::fail (*failures*) "FAIL ~A pretty ~A ~S: printed ~S, expected ~S~%"
                   *read-default-float-format* *print-pretty* x new old)))))))
 
 ;;; Cases that must keep the general path.
@@ -75,7 +73,7 @@
   (flet ((expect (string thunk)
            (let ((got (funcall thunk)))
              (unless (string= got string)
-               (fail "FAIL special: got ~S, expected ~S~%" got string)))))
+               (cl-user::fail (*failures*) "FAIL special: got ~S, expected ~S~%" got string)))))
     (let ((*read-default-float-format* 'single-float))
       (expect "0.0" (lambda () (prin1-to-string 0.0)))
       (expect "-0.0d0" (lambda () (prin1-to-string -0d0)))

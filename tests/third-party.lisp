@@ -56,25 +56,28 @@
 
 (defvar *own-failures* 0)
 
-;;; Print N random floats of FORMAT and parse them back with every parser.
+;;; The result of PARSE on STRING, or the type of the error it signals.
+(defun parse-or-error (parse string)
+  (handler-case (funcall parse string)
+    (error (c) (type-of c))))
+
+;;; Print N random floats of FORMAT, made by MAKE, and parse each back with
+;;; every parser. Show the first 3 failures of each parser and return the
+;;; failure counts, in the order of *PARSERS*.
 (defun round-trip (n format make state)
   (let ((*read-default-float-format* format)
-        (failures (make-list (length *parsers*) :initial-element 0)))
+        (failures (make-array (length *parsers*) :initial-element 0)))
     (loop repeat n
-          do (let* ((x (funcall make state))
-                    (string (prin1-to-string x)))
-               (loop for (name . parse) in *parsers*
-                     for cell on failures
-                     do (let ((y (handler-case (funcall parse string)
-                                   (error (c) c))))
-                          (unless (eql y x)
-                            (when (<= (incf (car cell)) 3)
-                              (format t "  ~A ~S gave ~S~%" name string
-                                      (if (typep y 'condition)
-                                          (type-of y)
-                                          y))))))))
-    (incf *own-failures* (first failures))
-    failures))
+          for x = (funcall make state)
+          for string = (prin1-to-string x)
+          do (loop for (name . parse) in *parsers*
+                   for index from 0
+                   for result = (parse-or-error parse string)
+                   unless (eql result x)
+                     do (when (<= (incf (aref failures index)) 3)
+                          (format t "  ~A ~S gave ~S~%" name string result))))
+    (incf *own-failures* (aref failures 0))
+    (coerce failures 'list)))
 
 (let* ((args (rest sb-ext:*posix-argv*))
        (n (if (first args) (parse-integer (first args)) 1000000))

@@ -9,18 +9,9 @@
 
 (in-package "SB-IMPL")
 
-(defparameter *original-source*
-  (let ((path "/tmp/original-print.lisp"))
-    (sb-ext:run-program "/bin/sh"
-                        (list "-c" (format nil "git -C ~A show ~A:src/code/print.lisp > ~A"
-                                           (namestring (merge-pathnames "../../" (make-pathname :name nil :type nil :defaults sb-ext:*runtime-pathname*)))
-                                           (or (sb-ext:posix-getenv "ORIGINAL_REV") "c7621755f")
-                                           path)))
-    path))
+(load (merge-pathnames "common.lisp" *load-truename*))
 
-(let* ((text (with-open-file (s *original-source*)
-               (let ((string (make-string (file-length s))))
-                 (subseq string 0 (read-sequence string s)))))
+(let* ((text (cl-user::original-source "src/code/print.lisp"))
        (start (search "(defun flonum-to-string" text))
        (form (let ((*package* (find-package "SB-IMPL")))
                (read-from-string text t nil :start start))))
@@ -34,24 +25,27 @@
   (let ((new (multiple-value-list (apply #'flonum-to-string x args)))
         (old (multiple-value-list (apply #'reference-flonum-to-string x args))))
     (unless (equal new old)
-      (when (< (incf *failures*) 30)
-        (format t "FAIL ~S ~S: new ~S, original ~S~%" x args new old)))))
+      (cl-user::fail (*failures*)
+        "FAIL ~S ~S: new ~S, original ~S~%" x args new old))))
 
-(defparameter *widths* '(nil 1 2 3 5 8 12 30))
-(defparameter *fdigits* '(nil 0 1 2 3 6 17 40))
-(defparameter *scales* '(nil 0 1 2 -1 -3))
-(defparameter *fmins* '(nil 0 1 3))
-(defparameter *exponents* '(nil 1 -2 5))
+;;; The values tried for each argument after X: width, fdigits, scale,
+;;; fmin, exponent.
+(defparameter *parameter-values*
+  '((nil 1 2 3 5 8 12 30)
+    (nil 0 1 2 3 6 17 40)
+    (nil 0 1 2 -1 -3)
+    (nil 0 1 3)
+    (nil 1 -2 5)))
 
 (defun test-all-args (x)
-  (dolist (width *widths*)
-    (dolist (fdigits *fdigits*)
-      (dolist (scale *scales*)
-        (dolist (fmin *fmins*)
-          (dolist (exponent *exponents*)
-            ;; ~E (EXPONENT given) and ~F (no exponent) are the real uses.
-            (when (or (null exponent) fdigits)
-              (test x width fdigits scale fmin exponent))))))))
+  (cl-user::map-combinations
+   (lambda (args)
+     (destructuring-bind (width fdigits scale fmin exponent) args
+       (declare (ignore width scale fmin))
+       ;; ~E (EXPONENT given) and ~F (no exponent) are the real uses.
+       (when (or (null exponent) fdigits)
+         (apply #'test x args))))
+   *parameter-values*))
 
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))

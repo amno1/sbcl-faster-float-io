@@ -4,6 +4,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 ;;; Load the portable definitions from the SBCL source, so this always
 ;;; tests the code that other platforms will run. ZMIJ-BCD8 is tree-shaken
 ;;; out of x86-64 builds, so it is loaded too. The portable
@@ -31,27 +33,36 @@
            (type (unsigned-byte 32) hi lo))
   (%zmij-store-digits string index hi lo))
 
-(let* ((count (if (second sb-ext:*posix-argv*)
-                  (parse-integer (second sb-ext:*posix-argv*))
-                  2000000))
-       (state (sb-ext:seed-random-state 7))
-       (a (make-string 20 :element-type 'base-char :initial-element #\x))
-       (b (make-string 20 :element-type 'base-char :initial-element #\x))
-       (failures 0))
-  (flet ((try (hi lo index)
-           (fill a #\x) (fill b #\x)
-           (let ((ma (portable-store-digits a index hi lo))
-                 (mb (builtin-store-digits b index hi lo)))
-             (unless (and (= ma mb) (string= a b)
-                          (string= a (format nil "~8,'0D~8,'0D" hi lo)
-                                   :start1 index :end1 (+ index 16)))
-               (when (< (incf failures) 20)
-                 (format t "FAIL ~D ~D at ~D: ~S ~X vs ~S ~X~%"
-                         hi lo index a ma b mb))))))
-    (dolist (hi '(0 1 9 10 99999999 12345678 10000000 00000001))
-      (dolist (lo '(0 1 9 10 99999999 87654321 10000000))
-        (dotimes (index 5) (try hi lo index))))
-    (dotimes (i count)
-      (try (random 100000000 state) (random 100000000 state) (random 5 state))))
-  (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp failures) failures)
-  (sb-ext:exit :code (if (plusp failures) 1 0)))
+(defvar *failures* 0)
+
+;;; Store the 16 digits of HI and LO (two 8-digit groups) at INDEX with both
+;;; versions. The nonzero-digit masks they return and the strings they write
+;;; must be equal, and the digits must be HI and LO in decimal.
+(defun check (hi lo index)
+  (let ((a (make-string 20 :element-type 'base-char :initial-element #\x))
+        (b (make-string 20 :element-type 'base-char :initial-element #\x)))
+    (let ((mask-a (portable-store-digits a index hi lo))
+          (mask-b (builtin-store-digits b index hi lo))
+          (expected (format nil "~8,'0D~8,'0D" hi lo)))
+      (unless (and (= mask-a mask-b)
+                   (string= a b)
+                   (string= a expected :start1 index :end1 (+ index 16)))
+        (cl-user::fail (*failures*)
+          "FAIL ~D ~D at ~D: ~S ~X vs ~S ~X~%" hi lo index a mask-a b mask-b)))))
+
+;;; Edge cases: every combination of these HI, LO and INDEX values.
+(defparameter *edge-values*
+  '((0 1 9 10 99999999 12345678 10000000)
+    (0 1 9 10 99999999 87654321 10000000)
+    (0 1 2 3 4)))
+
+(let ((count (if (second sb-ext:*posix-argv*)
+                 (parse-integer (second sb-ext:*posix-argv*))
+                 2000000))
+      (state (sb-ext:seed-random-state 7)))
+  (cl-user::map-combinations (lambda (args) (apply #'check args)) *edge-values*)
+  (loop repeat count
+        do (check (random 100000000 state) (random 100000000 state)
+                  (random 5 state)))
+  (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp *failures*) *failures*)
+  (sb-ext:exit :code (if (plusp *failures*) 1 0)))

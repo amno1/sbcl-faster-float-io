@@ -9,6 +9,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defvar *failures* 0)
 (defvar *checked* 0)
 (defvar *fast* 0)
@@ -41,9 +43,9 @@
                     (setf (fdefinition 'make-float/fast) (constantly nil)))
                   (read-outcome string))))
     (unless (equal fast exact)
-      (when (< (incf *failures*) 30)
-        (format t "FAIL ~S (~A): fast ~S, exact ~S~%"
-                string *read-default-float-format* fast exact)))))
+      (cl-user::fail (*failures*)
+        "FAIL ~S (~A): fast ~S, exact ~S~%"
+        string *read-default-float-format* fast exact))))
 
 (defun random-digits (n state)
   (let ((s (make-string n)))

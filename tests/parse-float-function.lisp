@@ -10,12 +10,10 @@
 ;;;;
 ;;;;   ~/repos/sbcl-parse-float/run-sbcl.sh --script tests/parse-float-function.lisp [count]
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defvar *failures* 0)
 (defvar *checked* 0)
-
-(defun fail (control &rest args)
-  (when (< (incf *failures*) 30)
-    (apply #'format t control args)))
 
 (defun float-key (x)
   (if (floatp x)
@@ -55,7 +53,7 @@
   (let ((parsed (outcome (lambda () (sb-ext:parse-float string))))
         (read (outcome (lambda () (read-from-string string)))))
     (unless (equal parsed read)
-      (fail "FAIL reader ~S (~A): parse-float ~S, reader ~S~%"
+      (fail (*failures*) "FAIL reader ~S (~A): parse-float ~S, reader ~S~%"
             string *read-default-float-format* parsed read))))
 
 (defun check-against-exact (string)
@@ -75,7 +73,7 @@
                                   (- x)
                                   x)))))))
     (unless (equal parsed exact)
-      (fail "FAIL exact ~S (~A): parse-float ~S, exact ~S~%"
+      (fail (*failures*) "FAIL exact ~S (~A): parse-float ~S, exact ~S~%"
             string *read-default-float-format* parsed exact))))
 
 (defun check-like-parse-integer (string &rest args)
@@ -88,7 +86,7 @@
     (let ((float (run #'sb-ext:parse-float))
           (integer (run #'parse-integer)))
       (unless (equal float integer)
-        (fail "FAIL interface ~S ~S: parse-float ~S, parse-integer ~S~%"
+        (fail (*failures*) "FAIL interface ~S ~S: parse-float ~S, parse-integer ~S~%"
               string args float integer)))))
 
 (defun random-digits (n state)
@@ -142,9 +140,10 @@
     (loop for k below 2000
           for m = (+ (expt 2 53) 1 (* 2 k))
           for f = (+ (expt 2 24) 1 (* 2 k))
-          do (dolist (s (list (format nil "~D.0" m) (format nil "~Dd0" m)
-                              (format nil "~D.5d0" (floor m 2)) (format nil "~D.0" f)
-                              (format nil "~Df0" f)))
+          do
+          (dolist (s (list (format nil "~D.0" m) (format nil "~Dd0" m)
+                           (format nil "~D.5d0" (floor m 2)) (format nil "~D.0" f)
+                           (format nil "~Df0" f)))
                (check-against-reader s)
                (check-against-exact s))))
   ;; 3: interface, on strings that are integers for PARSE-INTEGER too.
@@ -167,7 +166,7 @@
     (incf *checked*)
     (multiple-value-bind (value index) (sb-ext:parse-float displaced :junk-allowed t)
       (unless (and (eql value 3.25) (eql index 5))
-        (fail "FAIL displaced: ~S ~S~%" value index))))
+        (fail (*failures*) "FAIL displaced: ~S ~S~%" value index))))
   ;; Junk-allowed with an exponent marker that is not followed by digits.
   (dolist (case '(("1.5e" 1.5 3) ("1.5ex" 1.5 3) ("2e+" 2.0 1) ("3d-x" 3d0 1)))
     (incf *checked*)
@@ -176,7 +175,7 @@
                                              'double-float 'single-float)))
         (multiple-value-bind (v i) (sb-ext:parse-float s :junk-allowed t)
           (unless (and (eql v (coerce value *read-default-float-format*)) (eql i index))
-            (fail "FAIL junk marker ~S: ~S ~S, expected ~S ~S~%" s v i value index))))))
+            (fail (*failures*) "FAIL junk marker ~S: ~S ~S, expected ~S ~S~%" s v i value index))))))
   (format t "~:D checks~%" *checked*)
   (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp *failures*) *failures*)
   (sb-ext:exit :code (if (plusp *failures*) 1 0)))

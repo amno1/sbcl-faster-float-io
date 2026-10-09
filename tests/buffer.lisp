@@ -6,6 +6,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defvar *failures* 0)
 (defvar *checked* 0)
 (defvar *used* 0)
@@ -22,22 +24,27 @@
           (unless (and (string= string buffer :end2 len)
                        (eql len olen) (eq lpoint olpoint) (eq tpoint otpoint)
                        (eql point opoint))
-            (when (< (incf *failures*) 30)
-              (format t "FAIL ~S ~S: buffer ~S ~S ~S ~S, string ~S ~S ~S ~S~%"
-                      x (list fdigits scale fmin exponent)
-                      (subseq buffer 0 len) len lpoint tpoint
-                      string olen olpoint otpoint))))))))
+            (cl-user::fail (*failures*)
+              "FAIL ~S ~S: buffer ~S ~S ~S ~S, string ~S ~S ~S ~S~%"
+              x (list fdigits scale fmin exponent)
+              (subseq buffer 0 len) len lpoint tpoint
+              string olen olpoint otpoint)))))))
+
+;;; The values tried for each argument after X: fdigits, scale, fmin,
+;;; exponent.
+(defparameter *parameter-values*
+  '((0 1 2 3 6 10 17 30)
+    (nil 0 1 2 -1 -3)
+    (nil 0 1 3)
+    (nil 1 -2 5)))
 
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))
                  20000))
       (state (sb-ext:seed-random-state 23)))
   (flet ((all (x)
-           (dolist (fdigits '(0 1 2 3 6 10 17 30))
-             (dolist (scale '(nil 0 1 2 -1 -3))
-               (dolist (fmin '(nil 0 1 3))
-                 (dolist (exponent '(nil 1 -2 5))
-                   (test x fdigits scale fmin exponent)))))))
+           (cl-user::map-combinations (lambda (args) (apply #'test x args))
+                                      *parameter-values*)))
     (dolist (x (list 1d0 1.0 0.5d0 0.125d0 2.5d0 9.995d0 9.996d0 0.001 0.015d0
                      123.456d0 1d7 12345678.9d0 1d22 1d300 1.7976931348623157d308
                      least-positive-double-float 1d-300 3.4e38 1.5e-45 0.1d0))

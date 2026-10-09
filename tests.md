@@ -70,6 +70,11 @@ for the scripts are given the same way, e.g.  `make THREADS=16 test-long`:
 | `DOUBLES`      | 0                           | random doubles in `single-roundtrip.lisp`                       |
 | `ORIGINAL_REV` | `c7621755f`                 | the original SBCL for `flonum-to-string`, `exponential`, `general` |
 
+[`tests/common.lisp`](tests/common.lisp) is not a test: it holds two helpers
+the tests share, `fail`, which counts a failure and prints it unless 50 have
+been printed already, and `map-combinations`, which tries every combination of
+a function's argument values.
+
 Tests that compare against SBCL's original code read it from the source tree of
 the build that runs them, so no paths have to be set for that. Each file can
 also be run directly, from the top folder, as `<build>/run-sbcl.sh --script
@@ -261,8 +266,9 @@ decimals (1-25 digits, exponents up to ±400, every marker and sign),
 exact halfway cases near 2^53 and 2^24, and overflow, underflow and
 subnormal boundaries, under both default float formats.
 
-Result: 10,006,588 strings (9,151,424 through the fast path) (printed floats, random decimals, halfway cases,
-boundaries); identical results with the fast path on and off.
+Result: 10,006,588 strings (9,151,424 through the fast path) (printed floats,
+random decimals, halfway cases, boundaries); identical results with the fast
+path on and off.
 
 ```sh
 make parse-float

@@ -8,19 +8,9 @@
 
 (in-package "SB-FORMAT")
 
-(defparameter *original-source*
-  (let ((path "/tmp/original-target-format.lisp"))
-    (sb-ext:run-program
-     "/bin/sh"
-     (list "-c" (format nil "git -C ~A show ~A:src/code/target-format.lisp > ~A"
-                        (namestring (merge-pathnames "../../" (make-pathname :name nil :type nil :defaults sb-ext:*runtime-pathname*)))
-                        (or (sb-ext:posix-getenv "ORIGINAL_REV") "c7621755f")
-                        path)))
-    path))
+(load (merge-pathnames "common.lisp" *load-truename*))
 
-(let* ((text (with-open-file (s *original-source*)
-               (let ((string (make-string (file-length s))))
-                 (subseq string 0 (read-sequence string s)))))
+(let* ((text (cl-user::original-source "src/code/target-format.lisp"))
        (start (search "(defun format-general-aux" text))
        (form (let ((*package* (find-package "SB-FORMAT")))
                (read-from-string text t nil :start start))))
@@ -33,23 +23,29 @@
   (handler-case (with-output-to-string (s) (apply fn s x args))
     (error (c) (list :error (type-of c)))))
 
+;;; The values tried for each parameter of FORMAT-GENERAL-AUX, in its
+;;; argument order: w, d, e, k (including NIL), overflow char, pad char,
+;;; marker, @.
+(defparameter *parameter-values*
+  '((nil 1 6 10 15)
+    (nil 0 1 3 8)
+    (nil 1 2 3)
+    (nil 1 0 2 -1 3)
+    (nil #\*)
+    (#\Space #\_)
+    (nil #\x)
+    (nil t)))
+
 (defun test (x)
-  (dolist (w '(nil 1 6 10 15))
-    (dolist (d '(nil 0 1 3 8))
-      (dolist (e '(nil 1 2 3))
-        (dolist (k '(nil 1 0 2 -1 3))
-          (dolist (ovf '(nil #\*))
-            (dolist (pad '(#\Space #\_))
-              (dolist (marker '(nil #\x))
-                (dolist (atsign '(nil t))
-                  (let ((args (list w d e k ovf pad marker atsign)))
-                    (incf *checked*)
-                    (let ((new (run #'format-general-aux x args))
-                          (old (run #'reference-format-general-aux x args)))
-                      (unless (equal new old)
-                        (when (< (incf *failures*) 30)
-                          (format t "FAIL ~S ~S: new ~S, original ~S~%"
-                                  x args new old))))))))))))))
+  (cl-user::map-combinations
+   (lambda (args)
+     (incf *checked*)
+     (let ((new (run #'format-general-aux x args))
+           (old (run #'reference-format-general-aux x args)))
+       (unless (equal new old)
+         (cl-user::fail (*failures*)
+           "FAIL ~S ~S: new ~S, original ~S~%" x args new old))))
+   *parameter-values*))
 
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))
@@ -71,9 +67,9 @@
                    (let ((k0 (sb-impl::flonum-exponent x))
                          (len0 (nth-value 1 (sb-impl::flonum-to-string x))))
                      (unless (and (eql k k0) (eql len len0))
-                       (when (< (incf *failures*) 30)
-                         (format t "FAIL helper ~S: ~S ~S, expected ~S ~S~%"
-                                 x k len k0 len0)))))))))
+                       (cl-user::fail (*failures*)
+                         "FAIL helper ~S: ~S ~S, expected ~S ~S~%"
+                         x k len k0 len0))))))))
       (dotimes (i 300000)
         (check (sb-kernel:make-double-float (random (ash 1 31) state)
                                             (random (ash 1 32) state)))

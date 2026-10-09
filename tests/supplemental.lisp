@@ -22,6 +22,8 @@
 ;;;;
 ;;;; Without arguments, all files in supplemental_test_files/data are used.
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defparameter *parse-float*
   (let ((s (find-symbol "PARSE-FLOAT" "SB-EXT")))
     (and s (fboundp s) (fdefinition s))))
@@ -50,17 +52,16 @@
                    (overflow (sb-ext:float-infinity-p result))
                    (t (= (float-bits result) expected)))))
     (unless ok
-      (when (<= (incf *failures*) 50)
-        (format t "FAIL ~A ~(~A~) ~S: expected ~X, got ~A~%"
-                name type
-                (if (> (length string) 60)
-                    (concatenate 'string (subseq string 0 60) "...")
-                    string)
-                expected
-                (if (typep result 'condition)
-                    (type-of result)
-                    (format nil "~X (~S)" (float-bits result) result)))
-        (finish-output)))))
+      (fail (*failures*)
+        "FAIL ~A ~(~A~) ~S: expected ~X, got ~A~%"
+        name type
+        (if (> (length string) 60)
+            (concatenate 'string (subseq string 0 60) "...")
+            string)
+        expected
+        (if (typep result 'condition)
+            (type-of result)
+            (format nil "~X (~S)" (float-bits result) result))))))
 
 (defun run-file (path)
   (let ((before *checks*)

@@ -7,6 +7,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 ;;; src/code/print.lisp of the SBCL running this test.
 (defparameter *print-source*
   (namestring (merge-pathnames "../../src/code/print.lisp"
@@ -41,14 +43,16 @@
               (and relativep (< position 1)))
     (incf *checked*)
     (when (flonum-to-digits/position
-           (abs x) (if relativep (flonum-relative-position (abs x) position) position))
+           (abs x) (if relativep
+                       (flonum-relative-position (abs x) position)
+                       position))
       (incf *fast*))
     (multiple-value-bind (k1 s1) (reference-digits (abs x) position relativep)
       (multiple-value-bind (k2 s2) (flonum-to-digits (abs x) position relativep)
         (unless (and (eql k1 k2) (string= s1 s2))
-          (when (< (incf *failures*) 30)
-            (format t "FAIL ~S position ~D~:[~; relative~]: expected ~D ~S, got ~D ~S~%"
-                    x position relativep k1 s1 k2 s2)))))))
+          (cl-user::fail (*failures*)
+            "FAIL ~S position ~D~:[~; relative~]: expected ~D ~S, got ~D ~S~%"
+            x position relativep k1 s1 k2 s2))))))
 
 ;;; Both modes: absolute POSITION, and relative 1..20 digits.
 (defun test-both (x position)
