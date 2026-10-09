@@ -1,0 +1,22 @@
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script tests/third-party.lisp 1000000
+Round trip, 1,000,000 random floats of each format
+  parse-float "1.64546455095796e37" gave 1.6454645509579599e37
+  parse-float "4.047154920327923e-33" gave 4.0471549203279234e-33
+  parse-float "2.6793296249412222e281" gave 2.6793296249412225e281
+  parse-float "-9.70416e-6" gave -9.704159e-6
+  parse-float "-4.490833e-31" gave -4.4908328e-31
+  parse-float "4.5915138e18" gave 4.5915136e18
+
+failures                        doubles          singles
+sb-ext:parse-float                    0                0
+parse-float                     340,677          276,689
+parse-number                          0                0
+
+Speed, ns per string, best of 7
+                                   sb-ext:parse-float          parse-float         parse-number     read-from-string
+short (1.5, 12.25)                                 20                  130                  180                   90
+17 digits, ordinary                                50                  210                  330                  160
+17 digits, exponent to +-300                       80                  350                2,140                  200
+single-floats                                      50                  200                  830                  140
+
+OK: sb-ext:parse-float, 0 failures

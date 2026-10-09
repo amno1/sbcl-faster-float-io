@@ -1,0 +1,84 @@
+From d6aa10b08226b4425ee9474867cb366d7c1449bb Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:47 +0200
+Subject: [PATCH 08/13] Exact fast path for relative float digit positions
+
+~wF (a width without a digit count) asks FLONUM-TO-DIGITS for a number
+of digits. FLONUM-RELATIVE-POSITION computes the absolute position that
+%FLONUM-TO-DIGITS derives from it, exactly on integers, and the
+absolute fast path does the rest. The starting estimate uses the
+integer ratio 1233/4096 for log10(2), so no float arithmetic happens at
+build time. Output is unchanged. (format nil "~12F" x) is about 3x
+faster.
+---
+ src/code/print.lisp | 51 ++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index e9b07e60d..e89c0b07e 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1938,12 +1938,57 @@ variable: an unreadable object representing the error is printed instead.")
+                      trailing-zeros)))
+           (values length (= point 0) (= point (1- length)) point))))))
+ 
++;;; The absolute position that %FLONUM-TO-DIGITS derives from a relative
++;;; POSITION (a number of digits). It takes K, the smallest K >= 0 with
++;;; 10^K >= value + M+ (M+ = 2^(E-1), the upper half-gap), and returns
++;;; K - POSITION, or K - POSITION - 1 if rounding to that position would
++;;; reach 10^K. Both comparisons are done exactly, on integers scaled by
++;;; a common denominator.
++(defun flonum-relative-position (float position)
++  (declare (type (or single-float double-float) float)
++           (type (integer 1 #.most-positive-fixnum) position))
++  (multiple-value-bind (f e) (integer-decode-float float)
++    ;; Same subnormal alignment as %FLONUM-TO-DIGITS.
++    (let ((float-digits (float-digits float)))
++      (when (< (float-precision float) float-digits)
++        (let ((shift (- float-digits (integer-length f))))
++          (setq f (ash f shift)
++                e (- e shift)))))
++    (flet ((pow10 (n)
++             (if (<= n 18)
++                 (svref +powers-of-ten-to-18+ n)
++                 (expt 10 n))))
++      ;; 10^K >= (2F + 1) * 2^(E-1), both sides times 2^max(0, 1-E).
++      (let* ((scale (if (< e 1) (ash 1 (- 1 e)) 1))
++             (u (* (1+ (* 2 f)) (if (> e 1) (ash 1 (- e 1)) 1)))
++             ;; Starting estimate, refined exactly below: log10(2) is about
++             ;; 1233/4096. (Integer arithmetic, so no float math happens
++             ;; while cross-compiling.)
++             (k (max 0 (1- (floor (* (- (integer-length u) (integer-length scale))
++                                     1233)
++                                  4096)))))
++        (loop while (< (* (pow10 k) scale) u) do (incf k))
++        (loop while (and (> k 0) (>= (* (pow10 (1- k)) scale) u)) do (decf k))
++        ;; 2 * value + 10^(K-POSITION) < 2 * 10^K, all times
++        ;; 2^max(0, -E) * 10^max(0, POSITION-K).
++        (let* ((d2 (if (< e 0) (ash 1 (- e)) 1))
++               (d10 (if (> position k) (pow10 (- position k)) 1))
++               (twice-value (* 2 f (if (> e 0) (ash 1 e) 1) d10))
++               (half-unit (* (if (> k position) (pow10 (- k position)) 1) d2))
++               (twice-top (* 2 (pow10 k) d2 d10)))
++          (if (< (+ twice-value half-unit) twice-top)
++              (- k position)
++              (- k position 1)))))))
++
+ (defun flonum-to-digits (float &optional position relativep)
+   (when (and position
+-             (not relativep)
+              (typep float '(or single-float double-float))
+-             (not (zerop float)))
+-    (multiple-value-bind (k string) (flonum-to-digits/position float position)
++             (not (zerop float))
++             (or (not relativep)
++                 (typep position '(integer 1 #.most-positive-fixnum))))
++    (multiple-value-bind (k string)
++        (flonum-to-digits/position
++         float (if relativep (flonum-relative-position float position) position))
+       (when k
+         (return-from flonum-to-digits (values k string)))))
+   #+64-bit
+-- 
+2.56.0
+

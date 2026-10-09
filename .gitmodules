@@ -1,0 +1,6 @@
+[submodule "supplemental_test_files"]
+	path = supplemental_test_files
+	url = https://github.com/fastfloat/supplemental_test_files
+[submodule "float-data"]
+	path = float-data
+	url = https://github.com/fastfloat/float-data

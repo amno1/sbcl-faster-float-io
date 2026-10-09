@@ -1,0 +1,110 @@
+From 4c90fa069cc5874641cef5cd9698f4eb5709a4b5 Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:19:37 +0200
+Subject: [PATCH 5/5] Add fast_float license notice; document
+ SB-EXT:PARSE-FLOAT
+
+The Eisel-Lemire fast path in the reader is adapted from fast_float,
+which is MIT licensed. Also add a manual entry for SB-EXT:PARSE-FLOAT.
+---
+ COPYING                        | 36 ++++++++++++++++++++++++++++++++--
+ doc/manual/beyond-ansi.texinfo | 31 +++++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/COPYING b/COPYING
+index 4220b3397..2d49f6853 100644
+--- a/COPYING
++++ b/COPYING
+@@ -17,9 +17,13 @@ the FreeBSD licence where not.
+ 
+ The CityHash mix function as adapted in hopscotch.c has an MIT license.
+ 
++The Eisel-Lemire float parsing code in src/code/reader.lisp is adapted
++from fast_float (https://github.com/fastfloat/fast_float), which is
++available under an MIT license; its notice is included below.
++
+ Thus, there are no known obstacles to copying, using, and modifying
+-SBCL freely, as long as copyright notices of MIT, Symbolics, Xerox and
+-Gerd Moellmann are retained.
++SBCL freely, as long as copyright notices of MIT, Symbolics, Xerox,
++Gerd Moellmann and the fast_float authors are retained.
+ 
+ ================================================================================
+ 
+@@ -121,3 +125,31 @@ Gerd Moellmann are retained.
+ ;;; software is freely granted, provided that this notice
+ ;;; is preserved.
+ ;;; ====================================================
++
++================================================================================
++
++;;;; The Eisel-Lemire float parsing code in src/code/reader.lisp is adapted
++;;;; from fast_float:
++;;;;
++;;;; MIT License
++;;;;
++;;;; Copyright (c) 2021 The fast_float authors
++;;;;
++;;;; Permission is hereby granted, free of charge, to any person obtaining a
++;;;; copy of this software and associated documentation files (the
++;;;; "Software"), to deal in the Software without restriction, including
++;;;; without limitation the rights to use, copy, modify, merge, publish,
++;;;; distribute, sublicense, and/or sell copies of the Software, and to
++;;;; permit persons to whom the Software is furnished to do so, subject to
++;;;; the following conditions:
++;;;;
++;;;; The above copyright notice and this permission notice shall be included
++;;;; in all copies or substantial portions of the Software.
++;;;;
++;;;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
++;;;; OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++;;;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
++;;;; IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
++;;;; CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
++;;;; TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
++;;;; SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git a/doc/manual/beyond-ansi.texinfo b/doc/manual/beyond-ansi.texinfo
+index feac11af0..13c720b1b 100644
+--- a/doc/manual/beyond-ansi.texinfo
++++ b/doc/manual/beyond-ansi.texinfo
+@@ -2679,6 +2679,37 @@ Note that the unencapsulated function may be @code{eq} to the designated
+ function even in the presence of encapsulations. For generic
+ functions, this is currently always the case.
+ @end deffn
++@anchor{Function sb-ext parse-float}
++@ffindex @sortas{parse-float sb-ext} parse-float [sb-ext]
++@deffn{Function} sb-ext:parse-float string &key start end junk-allowed
++Parses a decimal floating-point number in the substring of @code{string}
++delimited by @code{start} and @code{end}, skipping leading and trailing
++whitespace, like @code{parse-integer}. Returns two values: the float, and
++the index where parsing stopped.
++
++The syntax is that of floats in the reader: an optional sign, digits with
++an optional decimal point (at least one digit), and an optional exponent
++consisting of a marker (@code{e}, @code{s}, @code{f}, @code{d} or
++@code{l}, in either case), an optional sign and digits. Integers such as
++@code{"12"} and @code{"12."} are also accepted and give floats. The
++exponent marker decides the float format as in the reader; without one,
++or with @code{e}, it is @code{*read-default-float-format*}. The result is
++correctly rounded and equal to what @code{read-from-string} returns for
++the same float syntax.
++
++Signals a @code{parse-error} if the substring is not a float, unless
++@code{junk-allowed} is true, in which case it returns @code{nil} if there
++is no number and stops at the first character that is not part of one.
++Also signals a @code{parse-error} if the number is too large for its
++float format.
++
++@example
++(sb-ext:parse-float "  2.5  ")              @result{} 2.5, 7
++(sb-ext:parse-float "1.5d300")              @result{} 1.5d300, 7
++(sb-ext:parse-float "12")                   @result{} 12.0, 2
++(sb-ext:parse-float "3.25 kg" :junk-allowed t) @result{} 3.25, 4
++@end example
++@end deffn
+ @anchor{Generic function common-lisp documentation}
+ @ffindex @sortas{documentation common-lisp} documentation [common-lisp]
+ @deffn{Generic function} documentation object doc-type
+-- 
+2.56.0
+

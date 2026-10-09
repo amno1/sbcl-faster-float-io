@@ -1,0 +1,322 @@
+From 87a98e184d979aa03bee989955b92e9020f12f2a Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:47 +0200
+Subject: [PATCH 07/13] Lay out ~F, ~$ and ~E floats in stack buffers
+
+FLONUM-POSITION-DECIMAL returns the rounded integer instead of a digit
+string, and FLONUM-TO-BUFFER lays out digits, zeros and the point in a
+caller's buffer, sharing FLONUM-LAYOUT with FLONUM-TO-STRING.
+FORMAT-FIXED-AUX and FORMAT-DOLLARS use it with a dynamic-extent buffer
+and fall back to FLONUM-TO-STRING otherwise. FORMAT-EXP-AUX lays out
+the significand the same way and writes the exponent's digits into a
+small stack buffer instead of calling DECIMAL-STRING, which printed
+through a string stream. Output is unchanged.
+---
+ src/code/print.lisp         | 120 ++++++++++++++++++++++++++++--------
+ src/code/target-format.lisp |  67 ++++++++++++++++----
+ 2 files changed, 150 insertions(+), 37 deletions(-)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index cc5dc9383..e9b07e60d 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1547,6 +1547,26 @@ variable: an unreadable object representing the error is printed instead.")
+ ;;;
+ ;;; FLOAT-DIGITS actually generates the digits for positive numbers;
+ ;;; see below for comments.
++;;; Layout of FLONUM-TO-STRING's result, for N digits with the decimal
++;;; point after digit E: the result is digits [0, LEFT-END), LEFT-ZEROS
++;;; zeros, a point, RIGHT-ZEROS zeros, digits [RIGHT-START, RIGHT-END) and
++;;; TRAILING-ZEROS zeros.
++(declaim (inline flonum-layout))
++(defun flonum-layout (e n fdigits fmin exponent-zero)
++  (declare (type integer e) (type index n))
++  (if (or (and (= e 0) exponent-zero)
++          (plusp e))
++      ;; ddd[000].ddd[000]
++      (let ((split (min n e)))
++        (values split (max 0 (- e n)) 0 split n
++                (if fdigits (max 0 (- fdigits (- n split))) 0)))
++      ;; .[000]ddd[000]
++      (let ((end (if fdigits
++                     (min n (max (or fmin 0) (+ fdigits e)))
++                     n)))
++        (values 0 0 (max 0 (- e)) 0 end
++                (if fdigits (max 0 (+ fdigits e (- n))) 0)))))
++
+ (defun flonum-to-string (x &optional width fdigits scale fmin exponent-zero)
+   (declare (type float x))
+   (multiple-value-bind (e string)
+@@ -1582,23 +1602,9 @@ variable: an unreadable object representing the error is printed instead.")
+            (digits string)
+            (n (length digits)))
+       (declare (type index n))
+-      ;; The result is LEFT-DIGITS, LEFT-ZEROS zeros, a point, RIGHT-ZEROS
+-      ;; zeros, RIGHT-DIGITS and TRAILING-ZEROS zeros. Compute the sizes,
+-      ;; then fill one string of exactly that length.
+       (multiple-value-bind (left-end left-zeros right-zeros right-start
+                             right-end trailing-zeros)
+-          (if (or (and (= e 0) exponent-zero)
+-                  (plusp e))
+-              ;; ddd[000].ddd[000]
+-              (let ((split (min n e)))
+-                (values split (max 0 (- e n)) 0 split n
+-                        (if fdigits (max 0 (- fdigits (- n split))) 0)))
+-              ;; .[000]ddd[000]
+-              (let ((end (if fdigits
+-                             (min n (max (or fmin 0) (+ fdigits e)))
+-                             n)))
+-                (values 0 0 (max 0 (- e)) 0 end
+-                        (if fdigits (max 0 (+ fdigits e (- n))) 0))))
++          (flonum-layout e n fdigits fmin exponent-zero)
+         (let* ((point (+ left-end left-zeros))
+                (length (+ point 1 right-zeros (- right-end right-start)
+                           trailing-zeros))
+@@ -1802,7 +1808,7 @@ variable: an unreadable object representing the error is printed instead.")
+ ;;; decimal in the interval is the value rounded to a multiple of
+ ;;; 10^POSITION. That is computed here exactly. Exact ties (two
+ ;;; candidates) and results that round to zero go to the general code.
+-(defun flonum-to-digits/position (float position)
++(defun flonum-position-decimal (float position)
+   (declare (type (or single-float double-float) float)
+            (type fixnum position))
+   (multiple-value-bind (f e) (integer-decode-float float)
+@@ -1817,7 +1823,7 @@ variable: an unreadable object representing the error is printed instead.")
+     (unless (if (>= position 0)
+                 (or (<= e 0) (>= (expt 10 position) (ash 1 e)))
+                 (and (< e 0) (>= (ash 1 (- e)) (expt 10 (- position)))))
+-      (return-from flonum-to-digits/position nil))
++      (return-from flonum-position-decimal nil))
+     ;; value / 10^POSITION = Q + R/DEN. ROUND compares R with DEN/2:
+     ;; -1 below, 0 at a tie, 1 above.
+     (multiple-value-bind (q round)
+@@ -1847,7 +1853,7 @@ variable: an unreadable object representing the error is printed instead.")
+                                   ((= twice-r den) 0)
+                                   (t 1)))))))
+       (when (or (zerop q) (zerop round))
+-        (return-from flonum-to-digits/position nil))
++        (return-from flonum-position-decimal nil))
+       ;; G is below 2^53, since 10^POSITION >= 2^E.
+       (let* ((g (if (plusp round) (1+ q) q))
+              (n (do ((n 1 (1+ n))
+@@ -1859,12 +1865,78 @@ variable: an unreadable object representing the error is printed instead.")
+         (loop (multiple-value-bind (g/10 rem) (truncate g 10)
+                 (unless (zerop rem) (return))
+                 (setq g g/10 n (1- n))))
+-        (let ((string (make-string n :element-type 'base-char)))
+-          (loop for i from (1- n) downto 0
+-                do (multiple-value-bind (g/10 digit) (truncate g 10)
+-                     (setf (schar string i) (code-char (+ (char-code #\0) digit))
+-                           g g/10)))
+-          (values k string))))))
++        (values k g n)))))
++
++;;; Write the N decimal digits of G into STRING starting at START.
++(declaim (inline write-decimal-digits))
++(defun write-decimal-digits (g n string start)
++  (declare (type (unsigned-byte 62) g)
++           (type (integer 1 19) n)
++           (type simple-base-string string)
++           (type index start))
++  (loop for i from (+ start n -1) downto start
++        do (multiple-value-bind (g/10 digit) (truncate g 10)
++             (setf (schar string i) (code-char (+ (char-code #\0) digit))
++                   g g/10))))
++
++;;; FLONUM-POSITION-DECIMAL as (values K DIGIT-STRING), or NIL.
++(defun flonum-to-digits/position (float position)
++  (multiple-value-bind (k g n) (flonum-position-decimal float position)
++    (when k
++      (let ((string (make-string n :element-type 'base-char)))
++        (write-decimal-digits g n string 0)
++        (values k string)))))
++
++;;; Like (FLONUM-TO-STRING X NIL FDIGITS SCALE FMIN EXPONENT-ZERO), but
++;;; write the characters into BUFFER instead of a fresh string and return
++;;; (values LENGTH LPOINT TPOINT POINT), the second to fifth values of
++;;; FLONUM-TO-STRING. Return NIL, writing nothing useful, unless X is a
++;;; nonzero single or double float on the exact fast path of
++;;; FLONUM-POSITION-DECIMAL and the result fits in BUFFER; the caller
++;;; then uses FLONUM-TO-STRING.
++(defun flonum-to-buffer (buffer x fdigits scale fmin exponent-zero)
++  (declare (type simple-base-string buffer)
++           (type float x)
++           (type (and fixnum unsigned-byte) fdigits)
++           (type (or null fixnum) scale fmin exponent-zero))
++  (unless (and (typep x '(or single-float double-float))
++               (not (zerop x)))
++    (return-from flonum-to-buffer nil))
++  (multiple-value-bind (k g n)
++      (flonum-position-decimal x (+ (min (- (+ fdigits (or scale 0)))
++                                         (- (or fmin 0)))
++                                    (or exponent-zero 0)))
++    (unless k
++      (return-from flonum-to-buffer nil))
++    (let ((e (+ (if exponent-zero (- k exponent-zero) k)
++                (or scale 0))))
++      (multiple-value-bind (left-end left-zeros right-zeros right-start
++                            right-end trailing-zeros)
++          (flonum-layout e n fdigits fmin exponent-zero)
++        (let* ((point (+ left-end left-zeros))
++               (length (+ point 1 right-zeros (- right-end right-start)
++                          trailing-zeros)))
++          (when (> (+ length 19) (length buffer))
++            (return-from flonum-to-buffer nil))
++          ;; The digits are written after the result area, at DIGITS,
++          ;; and copied into place from there.
++          (let ((digits length))
++            (write-decimal-digits g n buffer digits)
++            (flet ((copy (from to at)
++                     (loop for i of-type index from from below to
++                           for j of-type index from at
++                           do (setf (schar buffer j)
++                                    (schar buffer (+ digits i)))))
++                   (zeros (start count)
++                     (fill buffer #\0 :start start :end (+ start count))))
++              (copy 0 left-end 0)
++              (zeros left-end left-zeros)
++              (setf (schar buffer point) #\.)
++              (zeros (+ point 1) right-zeros)
++              (copy right-start right-end (+ point 1 right-zeros))
++              (zeros (+ point 1 right-zeros (- right-end right-start))
++                     trailing-zeros)))
++          (values length (= point 0) (= point (1- length)) point))))))
+ 
+ (defun flonum-to-digits (float &optional position relativep)
+   (when (and position
+diff --git a/src/code/target-format.lisp b/src/code/target-format.lisp
+index 2e2f20310..fbdde85c8 100644
+--- a/src/code/target-format.lisp
++++ b/src/code/target-format.lisp
+@@ -591,11 +591,21 @@
+     (t
+      (sb-impl::string-dispatch (single-float double-float)
+          number
+-       (let ((spaceleft w))
++       (let ((spaceleft w)
++             ;; With a digit count, the number is usually laid out in this
++             ;; stack buffer instead of fresh strings (SB-IMPL::FLONUM-TO-BUFFER).
++             (buffer (make-string 64 :element-type 'base-char)))
++         (declare (dynamic-extent buffer))
+          (when (and w (or atsign (float-sign-bit-set-p number)))
+            (decf spaceleft))
+          (multiple-value-bind (str len lpoint tpoint)
+-             (sb-impl::flonum-to-string (abs number) spaceleft d k)
++             (multiple-value-bind (len lpoint tpoint)
++                 (and (typep d '(and fixnum unsigned-byte))
++                      (typep k '(or null fixnum))
++                      (sb-impl::flonum-to-buffer buffer (abs number) d k nil nil))
++               (if len
++                   (values buffer len lpoint tpoint)
++                   (sb-impl::flonum-to-string (abs number) spaceleft d k)))
+            ;; if caller specifically requested no fraction digits, suppress the
+            ;; optional trailing zero
+            (when (and d (zerop d))
+@@ -627,7 +637,7 @@
+                         (write-char #\+ stream)))
+                   (when lpoint
+                     (write-char #\0 stream))
+-                  (write-string str stream)
++                  (write-string str stream :end len)
+                   (when tpoint
+                     (write-char #\0 stream))
+                   nil))))))))
+@@ -686,9 +696,23 @@
+       (let* ((num (abs number))
+              (num-expt (sb-impl::flonum-exponent num))
+              (expt (- num-expt k))
+-             (estr (decimal-string (abs expt)))
+-             (elen (if e (max (length estr) e) (length estr)))
++             ;; The exponent's digits, usually in a small stack buffer
++             ;; instead of a string from DECIMAL-STRING.
++             (ebuffer (make-string 20 :element-type 'base-char))
++             (estr ebuffer)
++             (estr-len (let ((a (abs expt)))
++                         (if (typep a '(unsigned-byte 62))
++                             (let ((n (do ((n 1 (1+ n))
++                                           (p 10 (* p 10)))
++                                          ((< a p) n))))
++                               (sb-impl::write-decimal-digits a n ebuffer 0)
++                               n)
++                             (length (setq estr (decimal-string a))))))
++             (elen (if e (max estr-len e) estr-len))
++             ;; The significand, usually laid out here (see FORMAT-FIXED-AUX).
++             (buffer (make-string 64 :element-type 'base-char))
+              spaceleft)
++        (declare (dynamic-extent ebuffer buffer))
+         (when w
+           (setf spaceleft (- w 2 elen))
+           (when (or atsign (float-sign-bit-set-p number))
+@@ -698,7 +722,15 @@
+             (let* ((fdig (if d (if (plusp k) (1+ (- d k)) d) nil))
+                    (fmin (if (minusp k) 1 fdig)))
+               (multiple-value-bind (fstr flen lpoint tpoint)
+-                  (sb-impl::flonum-to-string num spaceleft fdig k fmin num-expt)
++                  (multiple-value-bind (len lpoint tpoint)
++                      (and (typep fdig '(and fixnum unsigned-byte))
++                           (typep k 'fixnum)
++                           (typep fmin '(or null fixnum))
++                           (typep num-expt 'fixnum)
++                           (sb-impl::flonum-to-buffer buffer num fdig k fmin num-expt))
++                    (if len
++                        (values buffer len lpoint tpoint)
++                        (sb-impl::flonum-to-string num spaceleft fdig k fmin num-expt)))
+                 (when (eql fdig 0) (setq tpoint nil))
+                 (when w
+                   (decf spaceleft flen)
+@@ -719,7 +751,7 @@
+                              (write-char #\- stream)
+                              (if atsign (write-char #\+ stream)))
+                          (when lpoint (write-char #\0 stream))
+-                         (write-string fstr stream)
++                         (write-string fstr stream :end flen)
+                          (when tpoint (write-char #\0 stream))
+                          (write-char (if marker
+                                          marker
+@@ -728,9 +760,9 @@
+                          (write-char (if (minusp expt) #\- #\+) stream)
+                          (when e
+                            ;;zero-fill before exponent if necessary
+-                           (dotimes (i (- e (length estr)))
++                           (dotimes (i (- e estr-len))
+                              (write-char #\0 stream)))
+-                         (write-string estr stream)))))))))
++                         (write-string estr stream :end estr-len)))))))))
+ 
+ (def-format-interpreter #\G (colonp atsignp params)
+   (check-modifier "colon" colonp)
+@@ -799,10 +831,19 @@
+       (let* ((signstr (if (float-sign-bit-set-p number)
+                           "-"
+                           (if atsign "+" "")))
+-             (signlen (length signstr)))
++             (signlen (length signstr))
++             ;; Usually laid out in this stack buffer instead of a fresh
++             ;; string, as in FORMAT-FIXED-AUX.
++             (buffer (make-string 64 :element-type 'base-char)))
++        (declare (dynamic-extent buffer))
+         (multiple-value-bind (str strlen ig2 ig3 pointplace)
+-            (sb-impl::flonum-to-string (abs number) nil d nil)
+-          (declare (ignore ig2 ig3 strlen))
++            (multiple-value-bind (len lpoint tpoint point)
++                (and (typep d '(and fixnum unsigned-byte))
++                     (sb-impl::flonum-to-buffer buffer (abs number) d nil nil nil))
++              (if len
++                  (values buffer len lpoint tpoint point)
++                  (sb-impl::flonum-to-string (abs number) nil d nil)))
++          (declare (ignore ig2 ig3))
+           (when colon
+             (write-string signstr stream))
+           (dotimes (i (- w signlen (max n pointplace) 1 d))
+@@ -811,7 +852,7 @@
+             (write-string signstr stream))
+           (dotimes (i (- n pointplace))
+             (write-char #\0 stream))
+-          (write-string str stream)))
++          (write-string str stream :end strlen)))
+       (let ((*print-base* 10))
+         (format-write-field stream
+                             (princ-to-string number)
+-- 
+2.56.0
+

@@ -1,0 +1,127 @@
+From a79c311873cd1c8956fbc3b44ec6773b77b68eef Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:48 +0200
+Subject: [PATCH 10/13] ~G, values below one unit and exact ties: fewer digit
+ passes and fallbacks
+
+FLONUM-EXPONENT-AND-LENGTH gives ~G the shortest digits' exponent and
+printed length from one zmij call, instead of generating the digits
+twice. FLONUM-POSITION-DECIMAL now also handles values below one unit
+at the position (rounding up gives digit 1, and at most half a unit at
+a negative position gives "0", as %FLONUM-TO-DIGITS does) and exact
+ties (Q when Q is a multiple of 10, else Q+1, as %FLONUM-TO-DIGITS
+does). Output is unchanged. ~G is about 25% faster, and ~,2F of values
+below 0.01 about 6x faster.
+---
+ src/code/print.lisp         | 44 ++++++++++++++++++++++++++++++++++---
+ src/code/target-format.lisp | 30 +++++++++++++++----------
+ 2 files changed, 60 insertions(+), 14 deletions(-)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index 5df972636..114ea781e 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1876,10 +1876,27 @@ variable: an unreadable object representing the error is printed instead.")
+                   (values q (cond ((< twice-r den) -1)
+                                   ((= twice-r den) 0)
+                                   (t 1)))))))
+-      (when (or (zerop q) (zerop round))
+-        (return-from flonum-position-decimal nil))
++      (when (zerop q)
++        ;; The value is below one unit at 10^POSITION.
++        (cond ((plusp round))           ; rounds up to one unit: G = 1
++              ((< position 0)
++               ;; At most half a unit: %FLONUM-TO-DIGITS stops at the
++               ;; first digit, which is 0 because the value is below 0.1.
++               (return-from flonum-position-decimal (values 0 0 1)))
++              (t
++               ;; At POSITION >= 0 it returns unrounded digits instead.
++               (return-from flonum-position-decimal nil))))
+       ;; G is below 2^53, since 10^POSITION >= 2^E.
+-      (let* ((g (if (plusp round) (1+ q) q))
++      (let* ((g (cond ((plusp round) (1+ q))
++                      ((minusp round) q)
++                      ;; An exact tie between Q and Q+1 units. %FLONUM-TO-DIGITS
++                      ;; scans from the most significant digit and stops at the
++                      ;; first position where a candidate lies in the closed
++                      ;; interval [Q, Q+1]: Q when Q is a multiple of 10 (a
++                      ;; shorter decimal), otherwise Q+1 (a multiple of 10, or
++                      ;; its tie rule at the last digit, which rounds up).
++                      ((zerop (mod q 10)) q)
++                      (t (1+ q))))
+              (n (do ((n 1 (1+ n))
+                      (p 10 (* p 10)))
+                     ((< g p) n)))
+@@ -2156,6 +2173,27 @@ variable: an unreadable object representing the error is printed instead.")
+            (print-float-exponent float (1- k) stream)))
+      float)))
+ 
++;;; For a finite nonzero single or double float X, return
++;;; (values (FLONUM-EXPONENT X) (nth-value 1 (FLONUM-TO-STRING X))) from
++;;; one zmij call: K, the decimal point position of the shortest digits,
++;;; and the length FLONUM-TO-STRING gives them (digits, padding zeros and
++;;; a point). Used by ~G, which needs both but not the digits.
++#+64-bit
++(defun flonum-exponent-and-length (x)
++  (declare (type (or single-float double-float) x))
++  (multiple-value-bind (m e10) (zmij-decimal x)
++    (declare (type (unsigned-byte 62) m) (type fixnum e10))
++    (loop (multiple-value-bind (m/10 rem) (truncate m 10)
++            (unless (zerop rem) (return))
++            (setq m m/10 e10 (1+ e10))))
++    (let* ((n (do ((n 1 (1+ n))
++                   (p 10 (* p 10)))
++                  ((< m p) n)))
++           (k (+ e10 n)))
++      (values k (if (plusp k)
++                    (1+ (max n k))      ; ddd[000].ddd
++                    (+ 1 (- k) n))))))  ; .[000]ddd
++
+ ;;; flonum-to-digits without producing a string
+ (defun flonum-exponent (float)
+   (if (zerop float)
+diff --git a/src/code/target-format.lisp b/src/code/target-format.lisp
+index fbdde85c8..d026aad2b 100644
+--- a/src/code/target-format.lisp
++++ b/src/code/target-format.lisp
+@@ -791,18 +791,26 @@
+   (if (or (float-infinity-p number)
+           (float-nan-p number))
+       (prin1 number stream)
+-      (let* ((abs (abs number))
+-             (n (sb-impl::flonum-exponent abs)))
+-        ;; KLUDGE: Default d if omitted. The procedure is taken directly from
+-        ;; the definition given in the manual, and is not very efficient, since
+-        ;; we generate the digits twice. Future maintainers are encouraged to
+-        ;; improve on this. -- rtoy?? 1998??
++      (let ((abs (abs number))
++            n shortest-length)
++        ;; N is the shortest digits' exponent. Without D, ~G also needs
++        ;; their printed length; zmij gives both at once for nonzero
++        ;; single and double floats.
++        #+64-bit
++        (when (and (null d)
++                   (typep abs '(or single-float double-float))
++                   (not (zerop abs)))
++          (setf (values n shortest-length)
++                (sb-impl::flonum-exponent-and-length abs)))
++        (unless n
++          (setq n (sb-impl::flonum-exponent abs)))
++        ;; Default d if omitted. The procedure is taken directly from the
++        ;; definition given in the manual.
+         (unless d
+-          (multiple-value-bind (str len)
+-              (sb-impl::flonum-to-string abs)
+-            (declare (ignore str))
+-            (let ((q (if (= len 1) 1 (1- len))))
+-              (setq d (max q (min n 7))))))
++          (let* ((len (or shortest-length
++                          (nth-value 1 (sb-impl::flonum-to-string abs))))
++                 (q (if (= len 1) 1 (1- len))))
++            (setq d (max q (min n 7)))))
+         (let* ((ee (if e (+ e 2) 4))
+                (ww (if w (- w ee) nil))
+                (dd (- d n)))
+-- 
+2.56.0
+

@@ -1,0 +1,126 @@
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/correctness.lisp all 1000000
+mode all
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/vs-original.lisp 2000000
+5,444,287 checked; 4,578 subnormal differences (expected)
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/fallback.lisp
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/print-format.lisp
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/fixed.lisp 1000000
+9,407,520 checked, 8,454,701 on the fast path
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/format-fixed.lisp
+66,015 inputs x 33 directives
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/flonum-to-string.lisp
+33,524,928 calls checked
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/buffer.lisp
+30,735,360 checked, 27,114,253 through the buffer
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/exponential.lisp
+2,584,000 calls checked
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/general.lisp
+3,999,480 calls checked
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script tests/transform.lisp
+; in: LAMBDA (X)
+;     (FORMAT NIL "~VF" SB-FORMAT::X)
+; 
+; caught WARNING:
+;   Too few arguments (1) to FORMAT "~VF": requires at least 2.
+;   See also:
+;     The ANSI Standard, Section 22.3.10.2
+; 
+; compilation unit finished
+;   caught 1 WARNING condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~,VF" SB-FORMAT::X)
+; 
+; caught WARNING:
+;   Too few arguments (1) to FORMAT "~,VF": requires at least 2.
+;   See also:
+;     The ANSI Standard, Section 22.3.10.2
+; 
+; compilation unit finished
+;   caught 1 WARNING condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~:F" SB-FORMAT::X)
+; 
+; caught ERROR:
+;   during macroexpansion of (FORMATTER "~:F"). Use *BREAK-ON-SIGNALS* to intercept.
+;   
+;    error in FORMAT: The colon modifier cannot be used with this directive.
+;     ~:F
+;       ^
+; 
+; compilation unit finished
+;   caught 1 ERROR condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~VE" SB-FORMAT::X)
+; 
+; caught WARNING:
+;   Too few arguments (1) to FORMAT "~VE": requires at least 2.
+;   See also:
+;     The ANSI Standard, Section 22.3.10.2
+; 
+; compilation unit finished
+;   caught 1 WARNING condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~:E" SB-FORMAT::X)
+; 
+; caught ERROR:
+;   during macroexpansion of (FORMATTER "~:E"). Use *BREAK-ON-SIGNALS* to intercept.
+;   
+;    error in FORMAT: The colon modifier cannot be used with this directive.
+;     ~:E
+;       ^
+; 
+; compilation unit finished
+;   caught 1 ERROR condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~:G" SB-FORMAT::X)
+; 
+; caught ERROR:
+;   during macroexpansion of (FORMATTER "~:G"). Use *BREAK-ON-SIGNALS* to intercept.
+;   
+;    error in FORMAT: The colon modifier cannot be used with this directive.
+;     ~:G
+;       ^
+; 
+; compilation unit finished
+;   caught 1 ERROR condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~,V$" SB-FORMAT::X)
+; 
+; caught WARNING:
+;   Too few arguments (1) to FORMAT "~,V$": requires at least 2.
+;   See also:
+;     The ANSI Standard, Section 22.3.10.2
+; 
+; compilation unit finished
+;   caught 1 WARNING condition
+; in: LAMBDA (X)
+;     (FORMAT NIL "~1,2,3,4,5,6F" SB-FORMAT::X)
+; 
+; caught ERROR:
+;   during macroexpansion of (FORMATTER "~1,2,3,4,5,6F"). Use *BREAK-ON-SIGNALS* to
+;   intercept.
+;   
+;    error in FORMAT: Too many parameters, expected no more than 5
+;     ~1,2,3,4,5,6F
+;                ^
+; 
+; compilation unit finished
+;   caught 1 ERROR condition
+2,175 checks
+OK: 0 failures
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script tests/parse-float.lisp 1000000
+10,006,588 strings read, 9,151,424 through the fast path
+OK: 0 failures
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script tests/parse-float-function.lisp
+1,238,419 checks
+OK: 0 failures

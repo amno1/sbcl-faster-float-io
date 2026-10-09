@@ -1,0 +1,248 @@
+From 77993af2ac5c4b1302df9bb0f2238722e3ec0423 Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:19:37 +0200
+Subject: [PATCH 2/5] Add SB-EXT:PARSE-FLOAT
+
+(PARSE-FLOAT string &key start end junk-allowed)
+
+Parse a decimal float like PARSE-INTEGER parses an integer: same
+argument handling, whitespace rules and errors, returning the float
+and the index where parsing stopped. The syntax is that of the
+reader's floats (markers E, S, F, D, L decide the format), plus plain
+integers. It shares the Eisel-Lemire conversion with MAKE-FLOAT
+(DECIMAL-TO-FLOAT), with the reader's exact code as fallback, so it
+returns what READ-FROM-STRING returns for float tokens, without the
+reader: about 3x faster.
+---
+ src/code/reader.lisp  | 185 +++++++++++++++++++++++++++++++++++++-----
+ src/cold/exports.lisp |   4 +
+ 2 files changed, 170 insertions(+), 19 deletions(-)
+
+diff --git a/src/code/reader.lisp b/src/code/reader.lisp
+index 2a383f228..1829b5941 100644
+--- a/src/code/reader.lisp
++++ b/src/code/reader.lisp
+@@ -1828,6 +1828,30 @@ extended <package-name>::<form-in-package> syntax."
+           (return-from decimal-to-float-bits nil))
+         (logior (ash power2 mantissa-bits) mantissa)))))
+ 
++;;; The float nearest to W * 10^Q (W below 10^19), a DOUBLE-FLOAT if DOUBLE
++;;; else a SINGLE-FLOAT, or NIL if Q is out of range or the result
++;;; overflows or underflows to zero (cases for the exact code).
++(declaim (inline decimal-to-float))
++(defun decimal-to-float (w q double)
++  (declare (type (unsigned-byte 64) w)
++           (type fixnum q))
++  (cond ((zerop w)
++         (if double 0d0 0f0))
++        ((not (<= -342 q 308))
++         nil)
++        ;; Two calls with a constant DOUBLE, so that each inlined copy of
++        ;; DECIMAL-TO-FLOAT-BITS is compiled for one format.
++        (double
++         (let ((bits (decimal-to-float-bits w q t)))
++           ;; The sign bit is clear, so the high word fits
++           ;; MAKE-DOUBLE-FLOAT's signed argument.
++           (and bits
++                (sb-kernel:make-double-float (ash bits -32)
++                                             (ldb (byte 32 0) bits)))))
++        (t
++         (let ((bits (decimal-to-float-bits w q nil)))
++           (and bits (sb-kernel:make-single-float bits))))))
++
+ ;;; The float in the token buffer BUF, or NIL if the fast path does not
+ ;;; apply. Accepts an optional sign, ASCII digits with at most one point,
+ ;;; and an optional exponent marker (E, S, F, D or L) with an optional sign
+@@ -1899,25 +1923,8 @@ extended <package-name>::<form-in-package> syntax."
+                       ((single-float short-float) nil)
+                       (t (return-from make-float/fast nil))))
+             (q (- exponent fraction-digits)))
+-        (let ((value
+-                (cond ((zerop w)
+-                       (if double 0d0 0f0))
+-                      ((not (<= -342 q 308))
+-                       (return-from make-float/fast nil))
+-                      ;; Two calls with a constant DOUBLE, so that each
+-                      ;; inlined copy of DECIMAL-TO-FLOAT-BITS is compiled
+-                      ;; for one format.
+-                      (double
+-                       (let ((bits (or (decimal-to-float-bits w q t)
+-                                       (return-from make-float/fast nil))))
+-                         ;; The sign bit is clear, so the high word fits
+-                         ;; MAKE-DOUBLE-FLOAT's signed argument.
+-                         (sb-kernel:make-double-float (ash bits -32)
+-                                                      (ldb (byte 32 0) bits))))
+-                      (t
+-                       (sb-kernel:make-single-float
+-                        (or (decimal-to-float-bits w q nil)
+-                            (return-from make-float/fast nil)))))))
++        (let ((value (or (decimal-to-float w q double)
++                         (return-from make-float/fast nil))))
+           (if negative (- value) value))))))
+ )
+ 
+@@ -2090,6 +2097,146 @@ extended <package-name>::<form-in-package> syntax."
+   (maybe-note-read-from-string-signature-issue eof-error-p)
+   (%read-from-string/safe string eof-error-p eof-value start end preserve-whitespace)))
+ 
++;;;; PARSE-FLOAT
++
++(defun parse-float (string &key (start 0) end junk-allowed)
++  "Parse a decimal floating-point number in the substring of STRING
++delimited by START and END, skipping leading and trailing whitespace, like
++PARSE-INTEGER. The syntax is an optional sign, digits with an optional
++decimal point (at least one digit), and an optional exponent: one of the
++markers E, S, F, D or L, an optional sign and digits. The marker decides
++the float format as in the reader (E or none: *READ-DEFAULT-FLOAT-FORMAT*).
++Integers such as \"12\" and \"12.\" are accepted and give floats.
++Return the float, or NIL if JUNK-ALLOWED is true and there is no number,
++and the index where parsing stopped. Signal a PARSE-ERROR for invalid
++syntax unless JUNK-ALLOWED is true, and for a number too large for its
++float format."
++  (flet ((parse-error (format-control)
++           (error 'simple-parse-error
++                  :format-control format-control
++                  :format-arguments (list string))))
++    (with-array-data ((string string :offset-var offset)
++                      (start start)
++                      (end end)
++                      :check-fill-pointer t)
++      (let ((index (do ((i start (1+ i)))
++                       ((>= i end)
++                        (if junk-allowed
++                            (return-from parse-float (values nil end))
++                            (parse-error "no non-whitespace characters in string ~S.")))
++                     (declare (fixnum i))
++                     (unless (whitespace[1]p (char string i)) (return i))))
++            (negative nil)
++            (w 0)
++            (significant 0)
++            (long nil)
++            (digits-start 0)
++            (digits-end 0)
++            (found-digit nil)
++            (fraction-digits 0)
++            (dot nil)
++            (exponent 0)
++            (format *read-default-float-format*))
++        (declare (type index index digits-start digits-end)
++                 (type (unsigned-byte 64) w)
++                 (type (integer 0 19) significant)
++                 (type fixnum fraction-digits))
++        (flet ((digit-at (i)
++                 (and (< i end) (digit-char-p (char string i) 10))))
++          (declare (inline digit-at))
++          (case (char string index)
++            (#\- (setq negative t) (incf index))
++            (#\+ (incf index)))
++          ;; The significand: digits with at most one point. W collects up
++          ;; to 19 significant digits; beyond that LONG is set, and the
++          ;; exact code reparses DIGITS-START to DIGITS-END.
++          (setq digits-start index)
++          (loop while (< index end)
++                do (let* ((char (char string index))
++                          (digit (digit-char-p char 10)))
++                     (cond (digit
++                            (setq found-digit t)
++                            (unless (and (zerop w) (zerop digit))
++                              (if (= significant 19)
++                                  (setq long t)
++                                  (setq w (+ (* w 10) digit)
++                                        significant (1+ significant))))
++                            (when dot
++                              (incf fraction-digits)))
++                           ((and (char= char #\.) (not dot))
++                            (setq dot t))
++                           (t (return))))
++                   (incf index))
++          (setq digits-end index)
++          (unless found-digit
++            (return-from parse-float
++              (if junk-allowed
++                  (values nil (- index offset))
++                  (parse-error "no digits in string ~S"))))
++          ;; The exponent: a marker, an optional sign and at least one
++          ;; digit. Without digits the marker is not part of the number.
++          (when (< index end)
++            (let ((marker-format (case (char-upcase (char string index))
++                                   (#\E *read-default-float-format*)
++                                   (#\S 'short-float)
++                                   (#\F 'single-float)
++                                   (#\D 'double-float)
++                                   (#\L 'long-float)))
++                  (i (1+ index))
++                  (exponent-negative nil))
++              (declare (type index i))
++              (when marker-format
++                (when (< i end)
++                  (case (char string i)
++                    (#\- (setq exponent-negative t) (incf i))
++                    (#\+ (incf i))))
++                (when (digit-at i)
++                  (loop for digit = (digit-at i)
++                        while digit
++                        do (setq exponent (+ (* exponent 10) digit))
++                           (incf i))
++                  (when exponent-negative
++                    (setq exponent (- exponent)))
++                  (setq format marker-format
++                        index i)))))
++          ;; Anything else must be trailing whitespace.
++          (when (and (< index end) (not junk-allowed))
++            (loop for i from index below end
++                  unless (whitespace[1]p (char string i))
++                    do (parse-error "junk in string ~S"))
++            (setq index end))
++          (let* ((double (ecase format
++                           ((double-float #-long-float long-float) t)
++                           ((single-float short-float) nil)
++                           #+long-float (long-float :long)))
++                 (q (- exponent fraction-digits))
++                 (value
++                   (or #+64-bit
++                       (and (not long)
++                            (typep q 'fixnum)
++                            (case double
++                              ((t) (decimal-to-float w q t))
++                              ((nil) (decimal-to-float w q nil))))
++                       ;; Exact: the digits as an integer, scaled by a power
++                       ;; of ten, as MAKE-FLOAT does.
++                       (let ((number 0))
++                         (loop for i from digits-start below digits-end
++                               for digit = (digit-char-p (char string i) 10)
++                               when digit do (setq number (+ (* number 10) digit)))
++                         (let* ((divisor (expt 10 fraction-digits))
++                                (exponent (truncate-exponent exponent number divisor)))
++                           ;; Too large for FORMAT: a parse error, as the
++                           ;; reader reports it.
++                           (handler-case
++                               (coerce (/ (* (expt 10 exponent) number) divisor)
++                                       format)
++                             (arithmetic-error ()
++                               (error 'simple-parse-error
++                                      :format-control "can't represent the number in ~S as a ~S"
++                                      :format-arguments (list string format)))))))))
++            (values (if negative (- value) value)
++                    (- index offset))))))))
++
+ ;;;; PARSE-INTEGER
+ 
+ (macrolet ((def (radix)
+diff --git a/src/cold/exports.lisp b/src/cold/exports.lisp
+index 46197cec1..09cbfff38 100644
+--- a/src/cold/exports.lisp
++++ b/src/cold/exports.lisp
+@@ -394,6 +394,10 @@
+    "PARSE-NATIVE-NAMESTRING"
+    "NATIVE-NAMESTRING"
+ 
++   ;; reading numbers
++
++   "PARSE-FLOAT"
++
+    ;; external-format support
+ 
+    "OCTETS-TO-STRING" "STRING-TO-OCTETS"
+-- 
+2.56.0
+

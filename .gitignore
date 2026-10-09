@@ -1,0 +1,8 @@
+# Editor backup and auto-save files
+*~
+\#*#
+.#*
+*.swp
+
+# Compiled Lisp files
+*.fasl

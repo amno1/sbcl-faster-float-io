@@ -1,0 +1,637 @@
+From a942f3eb3943445799d8b6322a4dfa15117f966c Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:48 +0200
+Subject: [PATCH 11/13] Compile single ~F, ~E, ~G and ~$ FORMAT NIL calls
+ without a string stream
+
+A FORMAT NIL call whose control string is a single ~F, ~E, ~G or ~$
+directive with constant parameters is compiled into a call that builds
+the result string directly (FORMAT-FIXED-STRING and friends). The
+finite-float code of each directive is written once with
+DEFINE-FLOAT-EMITTER, which generates the stream version and a string
+version that collects output in a stack buffer; longer output is redone
+through the stream version, so both always agree. ~G's choice between
+fixed and exponential form is shared in FORMAT-GENERAL-PLAN. Output is
+unchanged.
+---
+ src/code/target-format.lisp | 489 ++++++++++++++++++++++++------------
+ src/compiler/srctran.lisp   |  56 +++++
+ 2 files changed, 387 insertions(+), 158 deletions(-)
+
+diff --git a/src/code/target-format.lisp b/src/code/target-format.lisp
+index d026aad2b..337509dd8 100644
+--- a/src/code/target-format.lisp
++++ b/src/code/target-format.lisp
+@@ -566,6 +566,51 @@
+                            params
+     (format-fixed stream (next-arg) w d k ovf pad atsignp)))
+ 
++;;; Define STREAM-FN, taking a stream and LAMBDA-LIST, and STRING-FN,
++;;; taking LAMBDA-LIST and returning a fresh string, from one BODY that
++;;; produces its output with (EMIT-CHAR char), (EMIT-STRING string end)
++;;; and (EMIT-CHARS char count). STRING-FN collects the output in a stack
++;;; buffer; output longer than the buffer is redone by STREAM-FN through a
++;;; string stream, so both always produce the same characters. LAMBDA-LIST
++;;; must be required parameters only.
++(defmacro define-float-emitter ((stream-fn string-fn) lambda-list &body body)
++  (let ((size 128))
++    `(progn
++       (defun ,stream-fn (stream ,@lambda-list)
++         (macrolet ((emit-char (c) `(write-char ,c stream))
++                    (emit-string (s end) `(write-string ,s stream :end ,end))
++                    (emit-chars (c n) `(dotimes (i ,n) (write-char ,c stream))))
++           ,@body))
++       (defun ,string-fn ,lambda-list
++         (let ((out (make-string ,size))
++               (fill 0))
++           (declare (dynamic-extent out)
++                    (type index fill))
++           (flet ((overflow ()
++                    (return-from ,string-fn
++                      (%with-output-to-string (stream)
++                        (,stream-fn stream ,@lambda-list)))))
++             (declare (ignorable #'overflow))
++             (macrolet ((emit-char (c)
++                          `(progn
++                             (when (= fill ,',size) (overflow))
++                             (setf (char out fill) ,c)
++                             (incf fill)))
++                        (emit-string (s end)
++                          `(let ((s ,s) (end ,end))
++                             (when (> (+ fill end) ,',size) (overflow))
++                             (dotimes (j end)
++                               (setf (char out fill) (char s j))
++                               (incf fill))))
++                        (emit-chars (c n)
++                          `(let ((c ,c) (n ,n))
++                             (when (plusp n)
++                               (when (> (+ fill n) ,',size) (overflow))
++                               (fill out c :start fill :end (+ fill n))
++                               (incf fill n)))))
++               ,@body))
++           (subseq out 0 fill))))))
++
+ (defun format-fixed (stream number w d k ovf pad atsign)
+   (typecase number
+     (float
+@@ -579,6 +624,44 @@
+      (let ((*print-base* 10))
+       (format-princ stream number nil nil w 1 0 pad)))))
+ 
++;;; The pieces of ~F output for a finite single or double float: return
++;;; (values SPACELEFT STR LEN LPOINT TPOINT). The output is SPACELEFT pad
++;;; characters (none if W is NIL), the sign, "0" if LPOINT, the first LEN
++;;; characters of STR, and "0" if TPOINT; it overflows if W is given and
++;;; SPACELEFT is negative. STR is often BUFFER, a 64-character base
++;;; string that the caller provides (usually on the stack).
++(declaim (inline format-fixed-pieces))
++(defun format-fixed-pieces (number w d k atsign buffer)
++  (declare (type (or single-float double-float) number))
++  (let ((spaceleft w))
++    (when (and w (or atsign (float-sign-bit-set-p number)))
++      (decf spaceleft))
++    (multiple-value-bind (str len lpoint tpoint)
++        (multiple-value-bind (len lpoint tpoint)
++            (and (typep d '(and fixnum unsigned-byte))
++                 (typep k '(or null fixnum))
++                 (sb-impl::flonum-to-buffer buffer (abs number) d k nil nil))
++          (if len
++              (values buffer len lpoint tpoint)
++              (sb-impl::flonum-to-string (abs number) spaceleft d k)))
++      ;; if caller specifically requested no fraction digits, suppress the
++      ;; optional trailing zero
++      (when (and d (zerop d))
++        (setq tpoint nil))
++      (when w
++        (decf spaceleft len)
++        ;; optional leading zero
++        (when lpoint
++          (if (or (> spaceleft 0) tpoint) ;force at least one digit
++              (decf spaceleft)
++              (setq lpoint nil)))
++        ;; optional trailing zero
++        (when tpoint
++          (if (> spaceleft 0)
++              (decf spaceleft)
++              (setq tpoint nil))))
++      (values spaceleft str len lpoint tpoint))))
++
+ ;;; We return true if we overflowed, so that ~G can output the overflow char
+ ;;; instead of spaces.
+ (defun format-fixed-aux (stream number w d k ovf pad atsign)
+@@ -591,37 +674,10 @@
+     (t
+      (sb-impl::string-dispatch (single-float double-float)
+          number
+-       (let ((spaceleft w)
+-             ;; With a digit count, the number is usually laid out in this
+-             ;; stack buffer instead of fresh strings (SB-IMPL::FLONUM-TO-BUFFER).
+-             (buffer (make-string 64 :element-type 'base-char)))
++       (let ((buffer (make-string 64 :element-type 'base-char)))
+          (declare (dynamic-extent buffer))
+-         (when (and w (or atsign (float-sign-bit-set-p number)))
+-           (decf spaceleft))
+-         (multiple-value-bind (str len lpoint tpoint)
+-             (multiple-value-bind (len lpoint tpoint)
+-                 (and (typep d '(and fixnum unsigned-byte))
+-                      (typep k '(or null fixnum))
+-                      (sb-impl::flonum-to-buffer buffer (abs number) d k nil nil))
+-               (if len
+-                   (values buffer len lpoint tpoint)
+-                   (sb-impl::flonum-to-string (abs number) spaceleft d k)))
+-           ;; if caller specifically requested no fraction digits, suppress the
+-           ;; optional trailing zero
+-           (when (and d (zerop d))
+-             (setq tpoint nil))
+-           (when w
+-             (decf spaceleft len)
+-             ;; optional leading zero
+-             (when lpoint
+-               (if (or (> spaceleft 0) tpoint) ;force at least one digit
+-                   (decf spaceleft)
+-                   (setq lpoint nil)))
+-             ;; optional trailing zero
+-             (when tpoint
+-               (if (> spaceleft 0)
+-                   (decf spaceleft)
+-                   (setq tpoint nil))))
++         (multiple-value-bind (spaceleft str len lpoint tpoint)
++             (format-fixed-pieces number w d k atsign buffer)
+            (cond ((and w (< spaceleft 0) ovf)
+                   ;; field width overflow
+                   (dotimes (i w)
+@@ -642,6 +698,53 @@
+                     (write-char #\0 stream))
+                   nil))))))))
+ 
++;;; (FORMAT NIL "~w,d,k,ovf,padF" NUMBER) without a string output stream,
++;;; for control strings that are just one ~F directive (see the FORMAT
++;;; transform in srctran.lisp). Finite single and double floats are built
++;;; directly from FORMAT-FIXED-PIECES; anything else goes through
++;;; FORMAT-FIXED.
++(defun format-fixed-string (number w d k ovf pad atsign)
++  (typecase number
++    ((or single-float double-float)
++     (if (or (float-infinity-p number) (float-nan-p number))
++         (%with-output-to-string (stream)
++           (format-fixed stream number w d k ovf pad atsign))
++         (let ((buffer (make-string 64 :element-type 'base-char)))
++           (declare (dynamic-extent buffer))
++           (multiple-value-bind (spaceleft str len lpoint tpoint)
++               (format-fixed-pieces number w d k atsign buffer)
++             (if (and w (< spaceleft 0) ovf)
++                 (values (make-string w :initial-element ovf) t)
++                 (let* ((pads (if w (max spaceleft 0) 0))
++                        (sign (cond ((float-sign-bit-set-p number) #\-)
++                                    (atsign #\+)))
++                        (result (make-string (+ pads (if sign 1 0) (if lpoint 1 0)
++                                                len (if tpoint 1 0))
++                                             :initial-element pad))
++                        (i pads))
++                   (declare (type index i))
++                   (when sign
++                     (setf (char result i) sign)
++                     (incf i))
++                   (when lpoint
++                     (setf (char result i) #\0)
++                     (incf i))
++                   (sb-impl::string-dispatch (simple-base-string
++                                              (simple-array character (*))
++                                              string)
++                       str
++                     (dotimes (j len)
++                       (setf (char result i) (char str j))
++                       (incf i)))
++                   (when tpoint
++                     (setf (char result i) #\0))
++                   (values result nil)))))))
++    (rational
++     (format-fixed-string (coerce number 'single-float) w d k ovf pad atsign))
++    (t
++     (%with-output-to-string (stream)
++       (format-fixed stream number w d k ovf pad atsign)))))
++
+ (def-format-interpreter #\E (colonp atsignp params)
+   (check-modifier "colon" colonp)
+   (interpret-bind-defaults
+@@ -693,76 +796,98 @@
+   (if (or (float-infinity-p number)
+           (float-nan-p number))
+       (prin1 number stream)
+-      (let* ((num (abs number))
+-             (num-expt (sb-impl::flonum-exponent num))
+-             (expt (- num-expt k))
+-             ;; The exponent's digits, usually in a small stack buffer
+-             ;; instead of a string from DECIMAL-STRING.
+-             (ebuffer (make-string 20 :element-type 'base-char))
+-             (estr ebuffer)
+-             (estr-len (let ((a (abs expt)))
+-                         (if (typep a '(unsigned-byte 62))
+-                             (let ((n (do ((n 1 (1+ n))
+-                                           (p 10 (* p 10)))
+-                                          ((< a p) n))))
+-                               (sb-impl::write-decimal-digits a n ebuffer 0)
+-                               n)
+-                             (length (setq estr (decimal-string a))))))
+-             (elen (if e (max estr-len e) estr-len))
+-             ;; The significand, usually laid out here (see FORMAT-FIXED-AUX).
+-             (buffer (make-string 64 :element-type 'base-char))
+-             spaceleft)
+-        (declare (dynamic-extent ebuffer buffer))
+-        (when w
+-          (setf spaceleft (- w 2 elen))
+-          (when (or atsign (float-sign-bit-set-p number))
+-            (decf spaceleft)))
+-        (if (and w ovf e (> elen e))  ;exponent overflow
+-            (dotimes (i w) (write-char ovf stream))
+-            (let* ((fdig (if d (if (plusp k) (1+ (- d k)) d) nil))
+-                   (fmin (if (minusp k) 1 fdig)))
+-              (multiple-value-bind (fstr flen lpoint tpoint)
+-                  (multiple-value-bind (len lpoint tpoint)
+-                      (and (typep fdig '(and fixnum unsigned-byte))
+-                           (typep k 'fixnum)
+-                           (typep fmin '(or null fixnum))
+-                           (typep num-expt 'fixnum)
+-                           (sb-impl::flonum-to-buffer buffer num fdig k fmin num-expt))
+-                    (if len
+-                        (values buffer len lpoint tpoint)
+-                        (sb-impl::flonum-to-string num spaceleft fdig k fmin num-expt)))
+-                (when (eql fdig 0) (setq tpoint nil))
+-                (when w
+-                  (decf spaceleft flen)
+-                  (when lpoint
+-                    (if (or (> spaceleft 0) tpoint)
+-                        (decf spaceleft)
+-                        (setq lpoint nil)))
+-                  (when tpoint
+-                    (if (<= spaceleft 0)
+-                        (setq tpoint nil)
+-                        (decf spaceleft))))
+-                (cond ((and w (< spaceleft 0) ovf)
+-                       ;;significand overflow
+-                       (dotimes (i w) (write-char ovf stream)))
+-                      (t (when w
+-                           (dotimes (i spaceleft) (write-char pad stream)))
+-                         (if (float-sign-bit-set-p number)
+-                             (write-char #\- stream)
+-                             (if atsign (write-char #\+ stream)))
+-                         (when lpoint (write-char #\0 stream))
+-                         (write-string fstr stream :end flen)
+-                         (when tpoint (write-char #\0 stream))
+-                         (write-char (if marker
+-                                         marker
+-                                         (format-exponent-marker number))
+-                                     stream)
+-                         (write-char (if (minusp expt) #\- #\+) stream)
+-                         (when e
+-                           ;;zero-fill before exponent if necessary
+-                           (dotimes (i (- e estr-len))
+-                             (write-char #\0 stream)))
+-                         (write-string estr stream :end estr-len)))))))))
++      (format-exp-finite stream number w d e k ovf pad marker atsign)))
++
++;;; ~E for a finite float, to a stream (FORMAT-EXP-FINITE) or as a string
++;;; (FORMAT-EXP-FINITE-STRING).
++(define-float-emitter (format-exp-finite format-exp-finite-string)
++    (number w d e k ovf pad marker atsign)
++  (declare (type float number))
++  (let* ((num (abs number))
++         (num-expt (sb-impl::flonum-exponent num))
++         (expt (- num-expt k))
++         ;; The exponent's digits, usually in a small stack buffer
++         ;; instead of a string from DECIMAL-STRING.
++         (ebuffer (make-string 20 :element-type 'base-char))
++         (estr ebuffer)
++         (estr-len (let ((a (abs expt)))
++                     (if (typep a '(unsigned-byte 62))
++                         (let ((n (do ((n 1 (1+ n))
++                                       (p 10 (* p 10)))
++                                      ((< a p) n))))
++                           (sb-impl::write-decimal-digits a n ebuffer 0)
++                           n)
++                         (length (setq estr (decimal-string a))))))
++         (elen (if e (max estr-len e) estr-len))
++         ;; The significand, usually laid out here (see FORMAT-FIXED-AUX).
++         (buffer (make-string 64 :element-type 'base-char))
++         spaceleft)
++    (declare (dynamic-extent ebuffer buffer))
++    (when w
++      (setf spaceleft (- w 2 elen))
++      (when (or atsign (float-sign-bit-set-p number))
++        (decf spaceleft)))
++    (if (and w ovf e (> elen e))  ;exponent overflow
++        (emit-chars ovf w)
++        (let* ((fdig (if d (if (plusp k) (1+ (- d k)) d) nil))
++               (fmin (if (minusp k) 1 fdig)))
++          (multiple-value-bind (fstr flen lpoint tpoint)
++              (multiple-value-bind (len lpoint tpoint)
++                  (and (typep fdig '(and fixnum unsigned-byte))
++                       (typep k 'fixnum)
++                       (typep fmin '(or null fixnum))
++                       (typep num-expt 'fixnum)
++                       (sb-impl::flonum-to-buffer buffer num fdig k fmin num-expt))
++                (if len
++                    (values buffer len lpoint tpoint)
++                    (sb-impl::flonum-to-string num spaceleft fdig k fmin num-expt)))
++            (when (eql fdig 0) (setq tpoint nil))
++            (when w
++              (decf spaceleft flen)
++              (when lpoint
++                (if (or (> spaceleft 0) tpoint)
++                    (decf spaceleft)
++                    (setq lpoint nil)))
++              (when tpoint
++                (if (<= spaceleft 0)
++                    (setq tpoint nil)
++                    (decf spaceleft))))
++            (cond ((and w (< spaceleft 0) ovf)
++                   ;;significand overflow
++                   (emit-chars ovf w))
++                  (t (when w
++                       (emit-chars pad spaceleft))
++                     (if (float-sign-bit-set-p number)
++                         (emit-char #\-)
++                         (if atsign (emit-char #\+)))
++                     (when lpoint (emit-char #\0))
++                     (emit-string fstr flen)
++                     (when tpoint (emit-char #\0))
++                     (emit-char (if marker
++                                    marker
++                                    (format-exponent-marker number)))
++                     (emit-char (if (minusp expt) #\- #\+))
++                     (when e
++                       ;;zero-fill before exponent if necessary
++                       (emit-chars #\0 (- e estr-len)))
++                     (emit-string estr estr-len))))))))
++
++;;; (FORMAT NIL "~...E" NUMBER) without a string output stream, for control
++;;; strings that are just one ~E directive (see the FORMAT transform in
++;;; srctran.lisp).
++(defun format-exponential-string (number w d e k ovf pad marker atsign)
++  (typecase number
++    (float
++     (if (or (float-infinity-p number) (float-nan-p number))
++         (%with-output-to-string (stream)
++           (format-exponential stream number w d e k ovf pad marker atsign))
++         (format-exp-finite-string number w d e k ovf pad marker atsign)))
++    (rational
++     (format-exponential-string (coerce number 'single-float)
++                                w d e k ovf pad marker atsign))
++    (t
++     (%with-output-to-string (stream)
++       (format-exponential stream number w d e k ovf pad marker atsign)))))
+ 
+ (def-format-interpreter #\G (colonp atsignp params)
+   (check-modifier "colon" colonp)
+@@ -791,38 +916,71 @@
+   (if (or (float-infinity-p number)
+           (float-nan-p number))
+       (prin1 number stream)
+-      (let ((abs (abs number))
+-            n shortest-length)
+-        ;; N is the shortest digits' exponent. Without D, ~G also needs
+-        ;; their printed length; zmij gives both at once for nonzero
+-        ;; single and double floats.
+-        #+64-bit
+-        (when (and (null d)
+-                   (typep abs '(or single-float double-float))
+-                   (not (zerop abs)))
+-          (setf (values n shortest-length)
+-                (sb-impl::flonum-exponent-and-length abs)))
+-        (unless n
+-          (setq n (sb-impl::flonum-exponent abs)))
+-        ;; Default d if omitted. The procedure is taken directly from the
+-        ;; definition given in the manual.
+-        (unless d
+-          (let* ((len (or shortest-length
+-                          (nth-value 1 (sb-impl::flonum-to-string abs))))
+-                 (q (if (= len 1) 1 (1- len))))
+-            (setq d (max q (min n 7)))))
+-        (let* ((ee (if e (+ e 2) 4))
+-               (ww (if w (- w ee) nil))
+-               (dd (- d n)))
+-          (cond ((<= 0 dd d)
+-                 (let ((char (if (format-fixed-aux stream number ww dd nil
+-                                                   ovf pad atsign)
+-                                 ovf
+-                                 #\space)))
+-                   (dotimes (i ee) (write-char char stream))))
+-                (t
+-                 (format-exp-aux stream number w d e (or k 1)
+-                                 ovf pad marker atsign)))))))
++      (multiple-value-bind (fixedp ww dd ee d) (format-general-plan number w d e)
++        (if fixedp
++            (let ((char (if (format-fixed-aux stream number ww dd nil
++                                              ovf pad atsign)
++                            ovf
++                            #\space)))
++              (dotimes (i ee) (write-char char stream)))
++            (format-exp-aux stream number w d e (or k 1)
++                            ovf pad marker atsign)))))
++
++;;; How ~G prints a finite float: return (values FIXEDP WW DD EE D). If
++;;; FIXEDP, it is ~WW,DD,,OVF,PADF followed by EE spaces (or overflow
++;;; characters); otherwise ~W,D,E,K,OVF,PAD,MARKERE with this D.
++(defun format-general-plan (number w d e)
++  (declare (type float number))
++  (let ((abs (abs number))
++        n shortest-length)
++    ;; N is the shortest digits' exponent. Without D, ~G also needs
++    ;; their printed length; zmij gives both at once for nonzero
++    ;; single and double floats.
++    #+64-bit
++    (when (and (null d)
++               (typep abs '(or single-float double-float))
++               (not (zerop abs)))
++      (setf (values n shortest-length)
++            (sb-impl::flonum-exponent-and-length abs)))
++    (unless n
++      (setq n (sb-impl::flonum-exponent abs)))
++    ;; Default d if omitted. The procedure is taken directly from the
++    ;; definition given in the manual.
++    (unless d
++      (let* ((len (or shortest-length
++                      (nth-value 1 (sb-impl::flonum-to-string abs))))
++             (q (if (= len 1) 1 (1- len))))
++        (setq d (max q (min n 7)))))
++    (let* ((ee (if e (+ e 2) 4))
++           (ww (if w (- w ee) nil))
++           (dd (- d n)))
++      (values (<= 0 dd d) ww dd ee d))))
++
++;;; (FORMAT NIL "~...G" NUMBER) without a string output stream, for control
++;;; strings that are just one ~G directive (see the FORMAT transform in
++;;; srctran.lisp).
++(defun format-general-string (number w d e k ovf pad marker atsign)
++  (typecase number
++    ((or single-float double-float)
++     (if (or (float-infinity-p number) (float-nan-p number))
++         (%with-output-to-string (stream)
++           (format-general stream number w d e k ovf pad marker atsign))
++         (multiple-value-bind (fixedp ww dd ee d)
++             (format-general-plan number w d e)
++           (if fixedp
++               (multiple-value-bind (fixed overflowp)
++                   (format-fixed-string number ww dd nil ovf pad atsign)
++                 (concatenate 'string fixed
++                              (make-string ee :initial-element
++                                           (if overflowp ovf #\space))))
++               (format-exponential-string number w d e (or k 1)
++                                          ovf pad marker atsign)))))
++    (rational
++     (format-general-string (coerce number 'single-float)
++                            w d e k ovf pad marker atsign))
++    (t
++     (%with-output-to-string (stream)
++       (format-general stream number w d e k ovf pad marker atsign)))))
+ 
+ (def-format-interpreter #\$ (colonp atsignp params)
+   (interpret-bind-defaults ((d 2) (n 1) (w 0) (pad #\space)) params
+@@ -836,36 +994,51 @@
+     ;; thing, and at least the user shouldn't be surprised.
+     (setq number (coerce number 'single-float)))
+   (if (floatp number)
+-      (let* ((signstr (if (float-sign-bit-set-p number)
+-                          "-"
+-                          (if atsign "+" "")))
+-             (signlen (length signstr))
+-             ;; Usually laid out in this stack buffer instead of a fresh
+-             ;; string, as in FORMAT-FIXED-AUX.
+-             (buffer (make-string 64 :element-type 'base-char)))
+-        (declare (dynamic-extent buffer))
+-        (multiple-value-bind (str strlen ig2 ig3 pointplace)
+-            (multiple-value-bind (len lpoint tpoint point)
+-                (and (typep d '(and fixnum unsigned-byte))
+-                     (sb-impl::flonum-to-buffer buffer (abs number) d nil nil nil))
+-              (if len
+-                  (values buffer len lpoint tpoint point)
+-                  (sb-impl::flonum-to-string (abs number) nil d nil)))
+-          (declare (ignore ig2 ig3))
+-          (when colon
+-            (write-string signstr stream))
+-          (dotimes (i (- w signlen (max n pointplace) 1 d))
+-            (write-char pad stream))
+-          (unless colon
+-            (write-string signstr stream))
+-          (dotimes (i (- n pointplace))
+-            (write-char #\0 stream))
+-          (write-string str stream :end strlen)))
++      (format-dollars-float stream number d n w pad colon atsign)
+       (let ((*print-base* 10))
+         (format-write-field stream
+                             (princ-to-string number)
+                             w 1 0 #\space t))))
+-
++
++;;; ~$ for a float, to a stream (FORMAT-DOLLARS-FLOAT) or as a string
++;;; (FORMAT-DOLLARS-FLOAT-STRING).
++(define-float-emitter (format-dollars-float format-dollars-float-string)
++    (number d n w pad colon atsign)
++  (declare (type float number))
++  (let* ((signstr (if (float-sign-bit-set-p number)
++                      "-"
++                      (if atsign "+" "")))
++         (signlen (length signstr))
++         ;; Usually laid out in this stack buffer instead of a fresh
++         ;; string, as in FORMAT-FIXED-AUX.
++         (buffer (make-string 64 :element-type 'base-char)))
++    (declare (dynamic-extent buffer))
++    (multiple-value-bind (str strlen ig2 ig3 pointplace)
++        (multiple-value-bind (len lpoint tpoint point)
++            (and (typep d '(and fixnum unsigned-byte))
++                 (sb-impl::flonum-to-buffer buffer (abs number) d nil nil nil))
++          (if len
++              (values buffer len lpoint tpoint point)
++              (sb-impl::flonum-to-string (abs number) nil d nil)))
++      (declare (ignore ig2 ig3))
++      (when colon
++        (emit-string signstr signlen))
++      (emit-chars pad (- w signlen (max n pointplace) 1 d))
++      (unless colon
++        (emit-string signstr signlen))
++      (emit-chars #\0 (- n pointplace))
++      (emit-string str strlen))))
++
++;;; (FORMAT NIL "~...$" NUMBER) without a string output stream, for control
++;;; strings that are just one ~$ directive (see the FORMAT transform in
++;;; srctran.lisp).
++(defun format-dollars-string (number d n w pad colon atsign)
++  (let ((number (if (rationalp number) (coerce number 'single-float) number)))
++    (if (floatp number)
++        (format-dollars-float-string number d n w pad colon atsign)
++        (%with-output-to-string (stream)
++          (format-dollars stream number d n w pad colon atsign)))))
++
+ ;;;; FORMAT interpreters and support functions for line/page breaks etc.
+ 
+ (def-format-interpreter #\% (colonp atsignp params)
+diff --git a/src/compiler/srctran.lisp b/src/compiler/srctran.lisp
+index 07d30244e..efcb12241 100644
+--- a/src/compiler/srctran.lisp
++++ b/src/compiler/srctran.lisp
+@@ -8991,6 +8991,62 @@
+                        (pop args)))))
+    (null args)))
+ 
++;;; (FORMAT NIL control X), the control string being exactly one ~F, ~E, ~G
++;;; or ~$ directive with constant parameters: build the string directly
++;;; (FORMAT-FIXED-STRING etc.) instead of through a string output stream.
++#-sb-xc-host
++(deftransform format ((stream control arg) (null (constant-arg string) t) * :important nil)
++  (let* (;; For each directive: the function, its parameters as (type
++         ;; default) as in the DEF-FORMAT-DIRECTIVE definitions, and whether
++         ;; it accepts the colon modifier, which is passed on as an argument.
++         (table
++           '((#\F sb-format::format-fixed-string
++              ((integer nil) (integer nil) (integer nil)
++               (character nil) (character #\Space))
++              nil)
++             (#\E sb-format::format-exponential-string
++              ((integer nil) (integer nil) (integer nil) (integer 1)
++               (character nil) (character #\Space) (character nil))
++              nil)
++             (#\G sb-format::format-general-string
++              ((integer nil) (integer nil) (integer nil) (integer nil)
++               (character nil) (character #\Space) (character nil))
++              nil)
++             (#\$ sb-format::format-dollars-string
++              ((integer 2) (integer 1) (integer 0) (character #\Space))
++              t)))
++         (tokenized
++           (handler-case
++               (sb-format::tokenize-control-string
++                (coerce (lvar-value control) 'simple-string))
++             (sb-format:format-error ()
++               (give-up-ir1-transform))))
++         (directive (first tokenized))
++         (entry (and (= (length tokenized) 1)
++                     (sb-format::format-directive-p directive)
++                     (assoc (char-upcase (sb-format::directive-character directive))
++                            table))))
++    (unless entry
++      (give-up-ir1-transform))
++    (destructuring-bind (function specs colon-allowed) (rest entry)
++      (let ((colonp (sb-format::directive-colonp directive))
++            (params (sb-format::directive-params directive)))
++        (when (or (and colonp (not colon-allowed))
++                  (> (length params) (length specs)))
++          (give-up-ir1-transform))
++        (let ((values
++                (loop for (type default) in specs
++                      for value = (cdr (pop params))
++                      collect (cond ((null value) default)
++                                    ((typep value type) value)
++                                    ;; V, # or a wrong type: keep the general path
++                                    (t (give-up-ir1-transform))))))
++          `(lambda (stream control arg)
++             (declare (ignore stream control))
++             (,function arg ,@(mapcar (lambda (v) `',v) values)
++                        ,@(and colon-allowed `(',colonp))
++                        ',(sb-format::directive-atsignp directive))))))))
++
+ (deftransform format ((stream control &rest args) (null (constant-arg string) &rest t) * :important nil)
+   (let ((tokenized
+           (handler-case
+-- 
+2.56.0
+

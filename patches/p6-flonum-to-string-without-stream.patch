@@ -1,0 +1,98 @@
+From 177a8e547a25927c62cb1330666aca1bbb374d83 Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:47 +0200
+Subject: [PATCH 06/13] Build FLONUM-TO-STRING's result without a string stream
+
+Compute the exact length, fill one string and return the point
+position directly. Copy digits with loops specialised on the digit
+string's type; REPLACE from a base string into a character string had
+no fast path. Output is unchanged. (format nil "~,2F" x) is about 25%
+faster.
+---
+ src/code/print.lisp | 70 +++++++++++++++++++++++++--------------------
+ 1 file changed, 39 insertions(+), 31 deletions(-)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index 92d6d06d6..cc5dc9383 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1579,37 +1579,45 @@ variable: an unreadable object representing the error is printed instead.")
+            (e (if (zerop x)
+                   e
+                   (+ e (or scale 0))))
+-           (stream (make-string-output-stream)))
+-      (if (or (and (= e 0)
+-                   exponent-zero)
+-              (plusp e))
+-          (progn
+-            (write-string string stream :end (min (length string) e))
+-            (dotimes (i (- e (length string)))
+-              (write-char #\0 stream))
+-            (write-char #\. stream)
+-            (write-string string stream :start (min (length string) e))
+-            (when fdigits
+-              (dotimes (i (- fdigits
+-                             (- (length string)
+-                                (min (length string) e))))
+-                (write-char #\0 stream))))
+-          (progn
+-            (write-string "." stream)
+-            (dotimes (i (- e))
+-              (write-char #\0 stream))
+-            (write-string string stream :end (when fdigits
+-                                               (min (length string)
+-                                                    (max (or fmin 0)
+-                                                         (+ fdigits e)))))
+-            (when fdigits
+-              (dotimes (i (+ fdigits e (- (length string))))
+-                (write-char #\0 stream)))))
+-      (let ((string (get-output-stream-string stream)))
+-        (values string (length string)
+-                (char= (char string 0) #\.)
+-                (char= (char string (1- (length string))) #\.)
+-                (position #\. string))))))
++           (digits string)
++           (n (length digits)))
++      (declare (type index n))
++      ;; The result is LEFT-DIGITS, LEFT-ZEROS zeros, a point, RIGHT-ZEROS
++      ;; zeros, RIGHT-DIGITS and TRAILING-ZEROS zeros. Compute the sizes,
++      ;; then fill one string of exactly that length.
++      (multiple-value-bind (left-end left-zeros right-zeros right-start
++                            right-end trailing-zeros)
++          (if (or (and (= e 0) exponent-zero)
++                  (plusp e))
++              ;; ddd[000].ddd[000]
++              (let ((split (min n e)))
++                (values split (max 0 (- e n)) 0 split n
++                        (if fdigits (max 0 (- fdigits (- n split))) 0)))
++              ;; .[000]ddd[000]
++              (let ((end (if fdigits
++                             (min n (max (or fmin 0) (+ fdigits e)))
++                             n)))
++                (values 0 0 (max 0 (- e)) 0 end
++                        (if fdigits (max 0 (+ fdigits e (- n))) 0))))
++        (let* ((point (+ left-end left-zeros))
++               (length (+ point 1 right-zeros (- right-end right-start)
++                          trailing-zeros))
++               (result (make-string length :initial-element #\0)))
++          ;; At most a few hundred characters, usually under 20: typed
++          ;; loops, since REPLACE has no fast path from base strings.
++          (string-dispatch (simple-base-string (simple-array character (*))
++                            string)
++              digits
++            (loop for i of-type index below left-end
++                  do (setf (schar result i) (char digits i)))
++            (loop for i of-type index from right-start below right-end
++                  for j of-type index from (+ point 1 right-zeros)
++                  do (setf (schar result j) (char digits i))))
++          (setf (schar result point) #\.)
++          (values result length
++                  (= point 0)
++                  (= point (1- length))
++                  point))))))
+ 
+ ;;; implementation of figure 1 from Burger and Dybvig, 1996. It is
+ ;;; extended in order to handle rounding.
+-- 
+2.56.0
+

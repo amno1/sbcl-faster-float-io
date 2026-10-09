@@ -1,0 +1,141 @@
+From 2978fccc9d056fdcde39e8dcce5ac55c6a64a11b Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:47 +0200
+Subject: [PATCH 09/13] Use zmij for positions finer than the float's spacing
+
+When half a unit at the requested position is at most the float's
+half-gap, %FLONUM-TO-DIGITS returns the shortest decimal in the
+float's own rounding interval, closed. Compute that with zmij and a new
+CLOSED option, which includes the interval's endpoints even for an odd
+significand. Powers of two, the mixed zone and subnormals still fall
+back. Output is unchanged. (format nil "~G" x) is about 1.6x faster.
+---
+ src/code/print.lisp | 28 ++++++++++++++++++++++++++--
+ src/code/zmij.lisp  | 25 +++++++++++++++----------
+ 2 files changed, 41 insertions(+), 12 deletions(-)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index e89c0b07e..5df972636 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1819,11 +1819,35 @@ variable: an unreadable object representing the error is printed instead.")
+         (let ((shift (- float-digits (integer-length f))))
+           (setq f (ash f shift)
+                 e (- e shift)))))
+-    ;; 10^POSITION >= 2^E
++    ;; Unless 10^POSITION >= 2^E, the interval is (partly) the float's own.
+     (unless (if (>= position 0)
+                 (or (<= e 0) (>= (expt 10 position) (ash 1 e)))
+                 (and (< e 0) (>= (ash 1 (- e)) (expt 10 (- position)))))
+-      (return-from flonum-position-decimal nil))
++      ;; If half a unit at 10^POSITION is at most the float's half-gaps on
++      ;; both sides, the interval is exactly the float's rounding interval,
++      ;; closed, and the result is the shortest decimal in it: zmij's
++      ;; result with CLOSED. That holds when 10^POSITION <= 2^E and the
++      ;; significand is not a power of two (whose lower half-gap is
++      ;; smaller); subnormals use a narrower interval there. Otherwise
++      ;; fall back.
++      (return-from flonum-position-decimal
++        (when (and (/= f (ash 1 (1- (float-digits float))))
++                   (= (float-precision float) (float-digits float))
++                   #+64-bit t #-64-bit nil
++                   (if (>= position 0)
++                       (and (>= e 0) (<= (expt 10 position) (ash 1 e)))
++                       (or (>= e 0)
++                           (<= (ash 1 (- e)) (expt 10 (- position))))))
++          #+64-bit
++          (multiple-value-bind (m e10) (zmij-decimal float t)
++            (declare (type (unsigned-byte 62) m) (type fixnum e10))
++            (loop (multiple-value-bind (m/10 rem) (truncate m 10)
++                    (unless (zerop rem) (return))
++                    (setq m m/10 e10 (1+ e10))))
++            (let ((n (do ((n 1 (1+ n))
++                          (p 10 (* p 10)))
++                         ((< m p) n))))
++              (values (+ e10 n) m n))))))
+     ;; value / 10^POSITION = Q + R/DEN. ROUND compares R with DEN/2:
+     ;; -1 below, 0 at a tie, 1 above.
+     (multiple-value-bind (q round)
+diff --git a/src/code/zmij.lisp b/src/code/zmij.lisp
+index 4e8446af7..bd6fdec3d 100644
+--- a/src/code/zmij.lisp
++++ b/src/code/zmij.lisp
+@@ -207,13 +207,15 @@
+   (zmij-irregular-body bin-sig raw-exp +zmij-float-exp-offset+
+                        (integer 0 100000000)))
+ 
+-(defun zmij-double-regular (bin-sig raw-exp)
++(defun zmij-double-regular (bin-sig raw-exp &optional closed)
+   (declare (type (unsigned-byte 53) bin-sig)
+            (type zmij-double-raw-exp raw-exp))
+   (let* ((bin-exp (- raw-exp +zmij-double-exp-offset+))
+          (dec-exp (zmij-dec-exp bin-exp t))
+          (shift (zmij-shift raw-exp))
+-         (even (- 1 (logand bin-sig 1))))
++         ;; 1 when the rounding interval includes its endpoints: for an
++         ;; even significand, or always when CLOSED.
++         (even (if closed 1 (- 1 (logand bin-sig 1)))))
+     (multiple-value-bind (pow10-hi pow10-lo) (zmij-pow10 (- (1+ dec-exp)))
+       (multiple-value-bind (p-hi p-lo)
+           (zmij-mul192-hi128 pow10-hi pow10-lo (ash bin-sig shift))
+@@ -237,7 +239,7 @@
+                   digit
+                   (not (or round-up round-down))))))))
+ 
+-(defun zmij-float-regular (bin-sig raw-exp)
++(defun zmij-float-regular (bin-sig raw-exp &optional closed)
+   (declare (type (unsigned-byte 24) bin-sig)
+            (type zmij-float-raw-exp raw-exp))
+   (let* ((bin-exp (- raw-exp +zmij-float-exp-offset+))
+@@ -245,7 +247,7 @@
+          ;; The double table works for floats too, with 34 bits of
+          ;; fraction instead of 6.
+          (shift (+ (zmij-shift (+ bin-exp +zmij-double-exp-offset+)) (- 34 6)))
+-         (even (- 1 (logand bin-sig 1)))
++         (even (if closed 1 (- 1 (logand bin-sig 1))))
+          (pow10-hi (values (zmij-pow10 (- (1+ dec-exp)))))
+          (p (zmij-mul-hi (logand (1+ pow10-hi) #xFFFFFFFFFFFFFFFF)
+                          (ash bin-sig shift)))
+@@ -264,8 +266,11 @@
+ (declaim (inline zmij-decimal))
+ ;;; Return (values M E) such that M * 10^E is the shortest decimal that
+ ;;; reads back as the absolute value of FLOAT. M may have trailing
+-;;; zeros. FLOAT must be finite and nonzero.
+-(defun zmij-decimal (float)
++;;; zeros. FLOAT must be finite and nonzero. With CLOSED, the rounding
++;;; interval includes its endpoints even for an odd significand, as in
++;;; %FLONUM-TO-DIGITS with a position (only meaningful when the
++;;; significand is not a power of two).
++(defun zmij-decimal (float &optional closed)
+   (declare (type (or single-float double-float) float))
+   (multiple-value-bind (integral dec-exp digit has-last-digit)
+       (etypecase float
+@@ -274,21 +279,21 @@
+                 (frac (ldb (byte 52 0) bits))
+                 (biased (ldb (byte 11 52) bits)))
+            (cond ((zerop biased)
+-                  (zmij-double-regular frac 1))
++                  (zmij-double-regular frac 1 closed))
+                  ((zerop frac)
+                   (zmij-double-irregular (ash 1 52) biased))
+                  (t
+-                  (zmij-double-regular (logior frac (ash 1 52)) biased)))))
++                  (zmij-double-regular (logior frac (ash 1 52)) biased closed)))))
+         (single-float
+          (let* ((bits (single-float-bits float))
+                 (frac (ldb (byte 23 0) bits))
+                 (biased (ldb (byte 8 23) bits)))
+            (cond ((zerop biased)
+-                  (zmij-float-regular frac 1))
++                  (zmij-float-regular frac 1 closed))
+                  ((zerop frac)
+                   (zmij-float-irregular (ash 1 23) biased))
+                  (t
+-                  (zmij-float-regular (logior frac (ash 1 23)) biased))))))
++                  (zmij-float-regular (logior frac (ash 1 23)) biased closed))))))
+     (if has-last-digit
+         (values (truly-the zmij-significand (+ (* integral 10) digit)) dec-exp)
+         (values integral (1+ dec-exp)))))
+-- 
+2.56.0
+

@@ -1,0 +1,103 @@
+From 67ac7748b2e6364dcdd762207a72d262f36415c6 Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:48 +0200
+Subject: [PATCH 13/13] Add zmij license notice to COPYING
+
+The shortest-digit float printer and its SSE2 digit routine are
+adapted from zmij, which is MIT licensed. Also mention the copyright
+in the source comments.
+---
+ COPYING                        | 37 ++++++++++++++++++++++++++++++++--
+ src/code/zmij.lisp             |  3 ++-
+ src/compiler/x86-64/array.lisp |  8 ++++----
+ 3 files changed, 41 insertions(+), 7 deletions(-)
+
+diff --git a/COPYING b/COPYING
+index 4220b3397..711ea7e57 100644
+--- a/COPYING
++++ b/COPYING
+@@ -17,9 +17,14 @@ the FreeBSD licence where not.
+ 
+ The CityHash mix function as adapted in hopscotch.c has an MIT license.
+ 
++The zmij float printing code in src/code/zmij.lisp (and the SSE2 digit
++conversion in src/compiler/x86-64/array.lisp) is adapted from zmij
++(https://github.com/vitaut/zmij), which has an MIT license; its notice
++is included below.
++
+ Thus, there are no known obstacles to copying, using, and modifying
+-SBCL freely, as long as copyright notices of MIT, Symbolics, Xerox and
+-Gerd Moellmann are retained.
++SBCL freely, as long as copyright notices of MIT, Symbolics, Xerox,
++Gerd Moellmann and Victor Zverovich are retained.
+ 
+ ================================================================================
+ 
+@@ -121,3 +126,31 @@ Gerd Moellmann are retained.
+ ;;; software is freely granted, provided that this notice
+ ;;; is preserved.
+ ;;; ====================================================
++
++================================================================================
++
++;;;; The zmij float printing code in src/code/zmij.lisp and the SSE2 digit
++;;;; conversion in src/compiler/x86-64/array.lisp are adapted from zmij:
++;;;;
++;;;; MIT License
++;;;;
++;;;; Copyright (c) 2025 Victor Zverovich
++;;;;
++;;;; Permission is hereby granted, free of charge, to any person obtaining a
++;;;; copy of this software and associated documentation files (the
++;;;; "Software"), to deal in the Software without restriction, including
++;;;; without limitation the rights to use, copy, modify, merge, publish,
++;;;; distribute, sublicense, and/or sell copies of the Software, and to
++;;;; permit persons to whom the Software is furnished to do so, subject to
++;;;; the following conditions:
++;;;;
++;;;; The above copyright notice and this permission notice shall be included
++;;;; in all copies or substantial portions of the Software.
++;;;;
++;;;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
++;;;; OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++;;;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
++;;;; IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
++;;;; CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
++;;;; TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
++;;;; SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git a/src/code/zmij.lisp b/src/code/zmij.lisp
+index bd6fdec3d..875e691ce 100644
+--- a/src/code/zmij.lisp
++++ b/src/code/zmij.lisp
+@@ -5,7 +5,8 @@
+ ;;;; more information.
+ ;;;;
+ ;;;; A port of Victor Zverovich's C implementation from
+-;;;; https://github.com/vitaut/zmij, MIT license
++;;;; https://github.com/vitaut/zmij, Copyright (c) 2025 Victor Zverovich,
++;;;; used under its MIT license (see COPYING).
+ ;;;;
+ ;;;; For details on the algorithm see
+ ;;;; https://vitaut.net/posts/2025/faster-dtoa/
+diff --git a/src/compiler/x86-64/array.lisp b/src/compiler/x86-64/array.lisp
+index bce23d33d..a4cd0131e 100644
+--- a/src/compiler/x86-64/array.lisp
++++ b/src/compiler/x86-64/array.lisp
+@@ -1060,10 +1060,10 @@
+           diff)
+     (move result diff)))
+ 
+-;;; SSE2 conversion of two 8-digit numbers to 16 ASCII digits, after
+-;;; zmij (https://github.com/vitaut/zmij). SSE2 is part of the x86-64
+-;;; baseline, so no CPU dispatch is needed; 16 digits fit one XMM
+-;;; register, so wider vectors would not help.
++;;; SSE2 conversion of two 8-digit numbers to 16 ASCII digits, adapted
++;;; from zmij (https://github.com/vitaut/zmij, MIT license, see COPYING).
++;;; SSE2 is part of the x86-64 baseline, so no CPU dispatch is needed; 16
++;;; digits fit one XMM register, so wider vectors would not help.
+ (define-vop (zmij-store-digits)
+   (:translate sb-impl::%zmij-store-digits)
+   (:policy :fast-safe)
+-- 
+2.56.0
+

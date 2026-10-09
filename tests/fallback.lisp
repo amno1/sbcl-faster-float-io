@@ -1,0 +1,57 @@
+;;;; Checks the portable %ZMIJ-STORE-DIGITS against the built-in one
+;;;; (the SSE2 VOP on x86-64), on random and edge-case inputs.
+;;;;   ~/repos/sbcl-zmij/run-sbcl.sh --script tests/fallback.lisp [count]
+
+(in-package "SB-IMPL")
+
+;;; Load the portable definitions from the SBCL source, so this always
+;;; tests the code that other platforms will run. ZMIJ-BCD8 is tree-shaken
+;;; out of x86-64 builds, so it is loaded too. The portable
+;;; %ZMIJ-STORE-DIGITS is defined as PORTABLE-STORE-DIGITS.
+;;; src/code/zmij.lisp of the SBCL running this test.
+(defparameter *zmij-source*
+  (namestring (merge-pathnames "../../src/code/zmij.lisp"
+                               (make-pathname :name nil :type nil :defaults sb-ext:*runtime-pathname*))))
+
+(defun source-form (text head)
+  (let ((start (search head text)))
+    (unless start (error "~S not found in ~A" head *zmij-source*))
+    (let ((*package* (find-package "SB-IMPL")))
+      (read-from-string text t nil :start start))))
+
+(let ((text (with-open-file (s *zmij-source*)
+              (let ((string (make-string (file-length s))))
+                (subseq string 0 (read-sequence string s))))))
+  (eval (source-form text "(defun zmij-bcd8"))
+  (let ((form (source-form text "(defun %zmij-store-digits")))
+    (eval `(defun portable-store-digits ,@(cddr form)))))
+
+(defun builtin-store-digits (string index hi lo)
+  (declare (type simple-base-string string) (type index index)
+           (type (unsigned-byte 32) hi lo))
+  (%zmij-store-digits string index hi lo))
+
+(let* ((count (if (second sb-ext:*posix-argv*)
+                  (parse-integer (second sb-ext:*posix-argv*))
+                  2000000))
+       (state (sb-ext:seed-random-state 7))
+       (a (make-string 20 :element-type 'base-char :initial-element #\x))
+       (b (make-string 20 :element-type 'base-char :initial-element #\x))
+       (failures 0))
+  (flet ((try (hi lo index)
+           (fill a #\x) (fill b #\x)
+           (let ((ma (portable-store-digits a index hi lo))
+                 (mb (builtin-store-digits b index hi lo)))
+             (unless (and (= ma mb) (string= a b)
+                          (string= a (format nil "~8,'0D~8,'0D" hi lo)
+                                   :start1 index :end1 (+ index 16)))
+               (when (< (incf failures) 20)
+                 (format t "FAIL ~D ~D at ~D: ~S ~X vs ~S ~X~%"
+                         hi lo index a ma b mb))))))
+    (dolist (hi '(0 1 9 10 99999999 12345678 10000000 00000001))
+      (dolist (lo '(0 1 9 10 99999999 87654321 10000000))
+        (dotimes (index 5) (try hi lo index))))
+    (dotimes (i count)
+      (try (random 100000000 state) (random 100000000 state) (random 5 state))))
+  (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp failures) failures)
+  (sb-ext:exit :code (if (plusp failures) 1 0)))

@@ -1,0 +1,32 @@
+/home/arthur/repos/sbcl-upstream/run-sbcl.sh --script benchmarks/format-bench.lisp
+SBCL 2.6.7.33.HEAD.728-c2aca591d, best of 9
+ns per call                     0.1 to 10^7   0.001 to 0.1
+prin1-to-string                       330.0          580.0
+~A                                    295.0          580.0
+~,2F                                  390.0          430.0
+~F                                    355.0          645.0
+~10,2F                                430.0          470.0
+~12F (width only)                    1030.0         1660.0
+~,3E                                  610.0         1455.0
+~E                                    595.0         1210.0
+~G                                   1270.0         2850.0
+~,2G                                  630.0         1845.0
+~$                                    430.0          435.0
+x=~,2F y=~,2F                         800.0          840.0
+~,2F to a null stream                 360.0          375.0
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script benchmarks/format-bench.lisp
+SBCL 2.6.7.33.sbcl-zmij.746-bd200e4f7, best of 9
+ns per call                     0.1 to 10^7   0.001 to 0.1
+prin1-to-string                        60.0           55.0
+~A                                     60.0           60.0
+~,2F                                   95.0           85.0
+~F                                     90.0           90.0
+~10,2F                                105.0           90.0
+~12F (width only)                     265.0          340.0
+~,3E                                  135.0          145.0
+~E                                    125.0          120.0
+~G                                    210.0          225.0
+~,2G                                  155.0          170.0
+~$                                    105.0           90.0
+x=~,2F y=~,2F                         220.0          200.0
+~,2F to a null stream                  95.0           85.0

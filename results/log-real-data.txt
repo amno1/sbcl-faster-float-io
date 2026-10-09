@@ -1,0 +1,45 @@
+/home/arthur/repos/sbcl-upstream/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.HEAD.728-c2aca591d, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       193            -      191
+canada                      111,126 double       315            -      248
+gaia                      1,000,000 double       320            -      286
+hellfloat64               1,000,000 double     1,287            -    1,984
+marine_ik                   114,950 single       153            -      121
+mesh                         73,019 double       143            -      149
+mobilenetv3_large         1,000,000 single       224            -      177
+noaa_gfs_1p00             1,000,000 double       191            -      329
+noaa_global_hourly_2023   1,000,000 double       114            -       92
+numbers                      10,001 double       237            -      220
+OK: 0 failures
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.sbcl-zmij.746-bd200e4f7, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       201            -       52
+canada                      111,126 double       333            -       54
+gaia                      1,000,000 double       332            -       60
+hellfloat64               1,000,000 double     1,299            -       68
+marine_ik                   114,950 single       161            -       41
+mesh                         73,019 double       146            -       50
+mobilenetv3_large         1,000,000 single       235            -       51
+noaa_gfs_1p00             1,000,000 double       198            -       52
+noaa_global_hourly_2023   1,000,000 double       122            -       49
+numbers                      10,001 double       245            -       53
+OK: 0 failures
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.sbcl-parse-float.737-ae1a8d45f, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       133           35      186
+canada                      111,126 double       172           54      245
+gaia                      1,000,000 double       183           58      282
+hellfloat64               1,000,000 double       205           74    1,973
+marine_ik                   114,950 single       104           24      116
+mesh                         73,019 double       106           26      144
+mobilenetv3_large         1,000,000 single       131           40      173
+noaa_gfs_1p00             1,000,000 double       120           32      323
+noaa_global_hourly_2023   1,000,000 double       100           21       90
+numbers                      10,001 double       151           39      214
+OK: 0 failures

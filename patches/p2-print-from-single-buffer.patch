@@ -1,0 +1,131 @@
+From 05eb7af9aa3b9de40f08b223485ad5b612dace4a Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:47 +0200
+Subject: [PATCH 02/13] Print floats from a single buffer
+
+PRINT-FLOAT now assembles the digits, decimal point, padding zeros and
+exponent of a zmij-printed float in one stack buffer and writes it with
+a single WRITE-STRING, instead of a series of WRITE-CHAR and
+WRITE-STRING calls plus PRINT-FLOAT-EXPONENT.
+---
+ src/code/print.lisp | 101 ++++++++++++++++++++++++++++++++------------
+ 1 file changed, 73 insertions(+), 28 deletions(-)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index 62043eaf1..903f017bf 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1786,37 +1786,82 @@ variable: an unreadable object representing the error is printed instead.")
+            (lambda (k) (values k (get-pushed-string)))
+            float position relativep)))))
+ 
++;;; Print FLOAT (finite, nonzero, sign already written) like PRINT-FLOAT,
++;;; but assemble the digits, decimal point, padding zeros and exponent
++;;; in one stack buffer and output it with a single WRITE-STRING.
++;;; The longest output is 0.00 plus 17 digits, or d. plus 16 digits,
++;;; a marker, a sign and three exponent digits: 24 characters.
+ #+64-bit
+ (defun print-float/zmij (float stream)
+   (declare (type (or single-float double-float) float))
+-  (with-zmij-digit-string (buffer start end k) float
+-    (let ((n (- end start)))
+-      (cond ((not (< -3 k 8))
+-             ;; d.ddd, then the exponent
+-             (write-char (schar buffer start) stream)
+-             (write-char #\. stream)
+-             (if (> n 1)
+-                 (write-string buffer stream :start (1+ start) :end end)
+-                 (write-char #\0 stream))
+-             (print-float-exponent float (1- k) stream))
+-            ((plusp k)
+-             (cond ((< k n)
+-                    ;; ddd.ddd
+-                    (write-string buffer stream :start start :end (+ start k))
+-                    (write-char #\. stream)
+-                    (write-string buffer stream :start (+ start k) :end end))
+-                   (t
+-                    ;; ddd000.0
+-                    (write-string buffer stream :start start :end end)
+-                    (loop repeat (- k n) do (write-char #\0 stream))
+-                    (write-string ".0" stream)))
+-             (print-float-exponent float 0 stream))
+-            (t
+-             ;; 0.000ddd
+-             (write-string "0." stream)
+-             (loop repeat (- k) do (write-char #\0 stream))
+-             (write-string buffer stream :start start :end end)
+-             (print-float-exponent float 0 stream))))))
++  (with-zmij-digit-string (digits start end k) float
++    (let ((out (make-string 24 :element-type 'base-char))
++          (p 0)
++          (n (- end start)))
++      (declare (dynamic-extent out)
++               (type (integer 0 24) p))
++      (macrolet ((put (char)
++                   `(progn (setf (schar out p) ,char) (incf p)))
++                 ;; At most 17 characters: an inline loop beats REPLACE's
++                 ;; out-of-line bit-bash copy.
++                 (put-digits (from to)
++                   `(loop for i of-type (integer 0 18) from ,from below ,to
++                          do (put (schar digits i))))
++                 (put-zeros (count)
++                   `(loop repeat ,count do (put #\0)))
++                 (put-digit (d)
++                   `(put (code-char (+ (char-code #\0) ,d)))))
++        (let ((exponent
++                (cond ((not (< -3 k 8))
++                       ;; d.ddd, then the exponent
++                       (put (schar digits start))
++                       (put #\.)
++                       (if (> n 1)
++                           (put-digits (1+ start) end)
++                           (put #\0))
++                       (1- k))
++                      ((plusp k)
++                       (cond ((< k n)
++                              ;; ddd.ddd
++                              (put-digits start (+ start k))
++                              (put #\.)
++                              (put-digits (+ start k) end))
++                             (t
++                              ;; ddd000.0
++                              (put-digits start end)
++                              (put-zeros (- k n))
++                              (put #\.)
++                              (put #\0)))
++                       0)
++                      (t
++                       ;; 0.000ddd
++                       (put #\0)
++                       (put #\.)
++                       (put-zeros (- k))
++                       (put-digits start end)
++                       0))))
++          (declare (type (integer -325 309) exponent))
++          ;; Exponent, as in PRINT-FLOAT-EXPONENT: omitted when zero and
++          ;; FLOAT has the default format, otherwise marked e, f or d.
++          (let ((marker (if (case *read-default-float-format*
++                              ((short-float single-float)
++                               (typep float 'single-float))
++                              ((double-float #-long-float long-float)
++                               (typep float 'double-float)))
++                            (and (/= exponent 0) #\e)
++                            (if (typep float 'single-float) #\f #\d))))
++            (when marker
++              (put marker)
++              (when (minusp exponent)
++                (put #\-))
++              (multiple-value-bind (hundreds rest) (truncate (abs exponent) 100)
++                (multiple-value-bind (tens ones) (truncate rest 10)
++                  (when (plusp hundreds)
++                    (put-digit hundreds))
++                  (when (or (plusp hundreds) (plusp tens))
++                    (put-digit tens))
++                  (put-digit ones)))))
++          (write-string out stream :end p))))))
+ 
+ (defun print-float (float stream)
+   #+64-bit
+-- 
+2.56.0
+

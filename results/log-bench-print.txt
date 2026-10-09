@@ -1,0 +1,23 @@
+/home/arthur/repos/sbcl-upstream/run-sbcl.sh --script benchmarks/benchmark.lisp 500000
+SBCL 2.6.7.33.HEAD.728-c2aca591d, 500,000 inputs per type, best of 9 runs
+zmij present: no
+
+operation                  single ns/op   double ns/op
+flonum-to-digits                  548.0         2314.0
+prin1-to-string                   628.0         2406.0
+prin1 to null stream              582.0         2338.0
+
+0.1 to 10^7                single ns/op   double ns/op
+flonum-to-digits pos -2           208.0          234.0
+/home/arthur/repos/sbcl-zmij/run-sbcl.sh --script benchmarks/benchmark.lisp 500000
+SBCL 2.6.7.33.sbcl-zmij.746-bd200e4f7, 500,000 inputs per type, best of 9 runs
+zmij present: yes
+
+operation                  single ns/op   double ns/op
+flonum-to-digits                   26.0           34.0
+prin1-to-string                    54.0           68.0
+prin1 to null stream               60.0           60.0
+zmij core                          12.0           14.0
+
+0.1 to 10^7                single ns/op   double ns/op
+flonum-to-digits pos -2            42.0           42.0

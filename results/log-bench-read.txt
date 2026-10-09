@@ -1,0 +1,36 @@
+/home/arthur/repos/sbcl-upstream/run-sbcl.sh --script benchmarks/read-bench.lisp
+SBCL 2.6.7.33.HEAD.728-c2aca591d, best of 9
+read-from-string of a 16-digit integer      170.0 ns
+short (e.g. 1.5, 12.25)
+  read-from-string                          130.0 ns
+  conversion (coerce (/ n d) 'double-float)     20.0 ns
+17 digits, ordinary
+  read-from-string                          300.0 ns
+  conversion (coerce (/ n d) 'double-float)     80.0 ns
+17 digits, exponent up to 300
+  read-from-string                         1230.0 ns
+  conversion (coerce (/ n d) 'double-float)    740.0 ns
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script benchmarks/read-bench.lisp
+SBCL 2.6.7.33.sbcl-parse-float.737-ae1a8d45f, best of 9
+read-from-string of a 16-digit integer      180.0 ns
+short (e.g. 1.5, 12.25)
+  read-from-string                          100.0 ns
+  conversion (coerce (/ n d) 'double-float)     30.0 ns
+17 digits, ordinary
+  read-from-string                          180.0 ns
+  conversion (coerce (/ n d) 'double-float)     90.0 ns
+17 digits, exponent up to 300
+  read-from-string                          190.0 ns
+  conversion (coerce (/ n d) 'double-float)    760.0 ns
+
+Same build, fast path on and off:
+  short (1.5, 12.25)           fast path   100.0 ns   original   130.0 ns
+  17 digits, ordinary          fast path   180.0 ns   original   310.0 ns
+  17 digits, exponent to 300   fast path   200.0 ns   original  1240.0 ns
+  single floats                fast path   140.0 ns   original   480.0 ns
+
+SB-EXT:PARSE-FLOAT against READ-FROM-STRING:
+  short (1.5, 12.25)           parse-float    20.0 ns   read-from-string    90.0 ns
+  17 digits, ordinary          parse-float    60.0 ns   read-from-string   190.0 ns
+  17 digits, exponent to 300   parse-float    70.0 ns   read-from-string   210.0 ns
+  single floats                parse-float    40.0 ns   read-from-string   140.0 ns

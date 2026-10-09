@@ -1,0 +1,231 @@
+From 7f00474c22dcecf324b85f8ef9f16f24d708931b Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:19:37 +0200
+Subject: [PATCH 1/5] Eisel-Lemire fast path for reading floats
+
+MAKE-FLOAT first tries MAKE-FLOAT/FAST, which reads a token with at
+most 19 significant digits into a 64-bit significand and decimal
+exponent and converts it with the Eisel-Lemire algorithm (after
+fast_float's compute_float, https://github.com/fastfloat/fast_float),
+using a 128-bit powers-of-five table built at compile time from
+integers. With at most 19 digits this is always correctly rounded
+(Mushtak and Lemire). Longer significands, the R marker, overflow and
+underflow fall back to the exact rational code, so results and errors
+are unchanged. Reading a double with a large exponent is about 6x
+faster, ordinary doubles about 1.7x. 64-bit platforms only.
+---
+ src/code/reader.lisp | 195 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 195 insertions(+)
+
+diff --git a/src/code/reader.lisp b/src/code/reader.lisp
+index e46fb7832..2a383f228 100644
+--- a/src/code/reader.lisp
++++ b/src/code/reader.lisp
+@@ -1730,9 +1730,204 @@ extended <package-name>::<form-in-package> syntax."
+         (min exponent (max 0 (floor (- max-exponent magnitude)
+                                     #.(cl:floor (cl:log 10 2))))))))
+ 
++;;;; Fast path for MAKE-FLOAT: the Eisel-Lemire algorithm, after Daniel
++;;;; Lemire's fast_float (https://github.com/fastfloat/fast_float, MIT,
++;;;; Apache-2.0 or BSL-1.0). With at most 19 significant decimal digits it
++;;;; gives the correctly rounded single or double float from one 64x128-bit
++;;;; multiplication (Mushtak and Lemire, "Fast Number Parsing Without
++;;;; Fallback"). Everything else uses the exact rational code below.
++
++#+64-bit
++(progn
++;;; 128-bit approximations of 5^Q for Q from -342 to 308, as (high, low)
++;;; pairs, normalized so that the high bit is set: rounded up for negative
++;;; Q and truncated for positive Q. Computed with integers only, as by
++;;; fast_float's script/table_generation.py.
++(define-load-time-global *eisel-lemire-powers-of-five*
++  #.(sb-xc:make-array
++     (* 2 (- 308 -342 -1))
++     :element-type '(unsigned-byte 64)
++     :initial-contents
++     (loop for q from -342 to 308
++           nconc (let ((c (if (< q 0)
++                              (let* ((power5 (expt 5 (- q)))
++                                     (z (integer-length (1- power5))))
++                                (if (>= q -27)
++                                    (1+ (floor (ash 1 (+ z 127)) power5))
++                                    (let ((c (1+ (floor (ash 1 (+ (* 2 z) 128)) power5))))
++                                      (ash c (- (max 0 (- (integer-length c) 128)))))))
++                              (let ((power5 (expt 5 q)))
++                                (ash power5 (- 128 (integer-length power5)))))))
++                   (list (ldb (byte 64 64) c) (ldb (byte 64 0) c))))))
++(declaim (type (simple-array (unsigned-byte 64) (1302)) *eisel-lemire-powers-of-five*))
++
++;;; The bits of the float nearest to W * 10^Q (W a nonzero integer below
++;;; 10^19, Q in [-342, 308]), as an unsigned integer: a DOUBLE-FLOAT if
++;;; DOUBLE, else a SINGLE-FLOAT. NIL if the result overflows or underflows
++;;; to zero; the caller then uses the exact code, which handles those
++;;; cases. This is fast_float's compute_float.
++(declaim (inline decimal-to-float-bits))
++(defun decimal-to-float-bits (w q double)
++  (declare (type (unsigned-byte 64) w)
++           (type (integer -342 308) q))
++  (let* ((mantissa-bits (if double 52 23))
++         (minimum-exponent (if double -1023 -127))
++         (infinite-power (if double #x7FF #xFF))
++         (lz (- 64 (integer-length w)))
++         (w (logand (ash w lz) #xFFFFFFFFFFFFFFFF))
++         (index (* 2 (+ q 342)))
++         (table *eisel-lemire-powers-of-five*))
++    (declare (type (integer 0 63) lz))
++    (multiple-value-bind (hi lo) (sb-bignum:%multiply w (aref table index))
++      (declare (type (unsigned-byte 64) hi lo))
++      ;; Only when the low bits that decide the result are all ones can
++      ;; the second half of the 128-bit power change them.
++      (let ((precision-mask (ash #xFFFFFFFFFFFFFFFF (- (+ mantissa-bits 3)))))
++        (when (= (logand hi precision-mask) precision-mask)
++          (let ((hi2 (values (sb-bignum:%multiply w (aref table (1+ index))))))
++            (declare (type (unsigned-byte 64) hi2))
++            (setq lo (logand (+ lo hi2) #xFFFFFFFFFFFFFFFF))
++            (when (> hi2 lo)
++              (setq hi (logand (1+ hi) #xFFFFFFFFFFFFFFFF))))))
++      (let* ((upperbit (ash hi -63))
++             (shift (+ upperbit 64 (- mantissa-bits) -3))
++             (mantissa (ash hi (- shift)))
++             (power2 (+ (ash (* (+ 152170 65536) q) -16) 63 upperbit (- lz)
++                        (- minimum-exponent))))
++        (declare (type (unsigned-byte 64) mantissa)
++                 (type fixnum power2))
++        (when (<= power2 0)
++          ;; Subnormal, or zero.
++          (let ((subnormal-shift (1+ (- power2))))
++            (when (>= subnormal-shift 64)
++              (return-from decimal-to-float-bits nil))
++            (setq mantissa (ash mantissa (- subnormal-shift)))
++            (setq mantissa (ash (+ mantissa (logand mantissa 1)) -1))
++            (when (zerop mantissa)
++              (return-from decimal-to-float-bits nil))
++            ;; Rounding may have carried into the smallest normal.
++            (return-from decimal-to-float-bits
++              (logior (ash (if (< mantissa (ash 1 mantissa-bits)) 0 1)
++                           mantissa-bits)
++                      mantissa))))
++        ;; Exactly halfway between two floats, with an even lower one:
++        ;; round down. Only possible where 5^Q fits in 64 bits.
++        (and (<= lo 1)
++             (if double
++                 (<= -4 q 23)
++                 (<= -17 q 10))
++             (= (logand mantissa 3) 1)
++             (= (logand (ash mantissa shift) #xFFFFFFFFFFFFFFFF) hi)
++             (setq mantissa (logandc2 mantissa 1)))
++        (setq mantissa (ash (+ mantissa (logand mantissa 1)) -1))
++        (when (>= mantissa (ash 2 mantissa-bits))
++          (setq mantissa (ash 1 mantissa-bits))
++          (incf power2))
++        (setq mantissa (logandc2 mantissa (ash 1 mantissa-bits)))
++        (when (>= power2 infinite-power)
++          (return-from decimal-to-float-bits nil))
++        (logior (ash power2 mantissa-bits) mantissa)))))
++
++;;; The float in the token buffer BUF, or NIL if the fast path does not
++;;; apply. Accepts an optional sign, ASCII digits with at most one point,
++;;; and an optional exponent marker (E, S, F, D or L) with an optional sign
++;;; and digits; at most 19 significant digits.
++(defun make-float/fast (buf)
++  (let* ((string (token-buf-string buf))
++         (end (token-buf-fill-ptr buf))
++         (i 0)
++         (negative nil)
++         (w 0)
++         (significant 0)
++         (fraction-digits 0)
++         (dot nil)
++         (exponent 0)
++         (format *read-default-float-format*))
++    (declare (type index i end)
++             (type (unsigned-byte 64) w)
++             (type (integer 0 20) significant)
++             (type fixnum fraction-digits exponent))
++    (flet ((char-at (i) (char string i)))
++      (declare (inline char-at))
++      (when (and (< i end) (member (char-at i) '(#\+ #\-)))
++        (setq negative (char= (char-at i) #\-))
++        (incf i))
++      ;; The significand.
++      (loop while (< i end)
++            do (let ((c (char-at i)))
++                 (cond ((char<= #\0 c #\9)
++                        (unless (and (zerop w) (char= c #\0))
++                          (when (= significant 19)
++                            (return-from make-float/fast nil))
++                          (incf significant)
++                          (setq w (+ (* w 10) (- (char-code c) (char-code #\0)))))
++                        (when dot
++                          (incf fraction-digits)))
++                       ((and (char= c #\.) (not dot))
++                        (setq dot t))
++                       (t (return))))
++               (incf i))
++      ;; The exponent.
++      (when (< i end)
++        (setq format (case (char-upcase (char-at i))
++                       (#\E *read-default-float-format*)
++                       ((#\S #\F) 'single-float)
++                       ((#\D #\L) 'double-float)
++                       (t (return-from make-float/fast nil))))
++        (incf i)
++        (let ((exponent-negative nil)
++              (digits 0))
++          (declare (type fixnum digits))
++          (when (and (< i end) (member (char-at i) '(#\+ #\-)))
++            (setq exponent-negative (char= (char-at i) #\-))
++            (incf i))
++          (loop while (< i end)
++                do (let ((c (char-at i)))
++                     (unless (char<= #\0 c #\9)
++                       (return-from make-float/fast nil))
++                     (setq exponent (+ (* exponent 10) (- (char-code c) (char-code #\0))))
++                     (when (> exponent 100000)
++                       (return-from make-float/fast nil))
++                     (incf digits)
++                     (incf i)))
++          (when (zerop digits)
++            (return-from make-float/fast nil))
++          (when exponent-negative
++            (setq exponent (- exponent)))))
++      (let ((double (case format
++                      ((double-float #-long-float long-float) t)
++                      ((single-float short-float) nil)
++                      (t (return-from make-float/fast nil))))
++            (q (- exponent fraction-digits)))
++        (let ((value
++                (cond ((zerop w)
++                       (if double 0d0 0f0))
++                      ((not (<= -342 q 308))
++                       (return-from make-float/fast nil))
++                      ;; Two calls with a constant DOUBLE, so that each
++                      ;; inlined copy of DECIMAL-TO-FLOAT-BITS is compiled
++                      ;; for one format.
++                      (double
++                       (let ((bits (or (decimal-to-float-bits w q t)
++                                       (return-from make-float/fast nil))))
++                         ;; The sign bit is clear, so the high word fits
++                         ;; MAKE-DOUBLE-FLOAT's signed argument.
++                         (sb-kernel:make-double-float (ash bits -32)
++                                                      (ldb (byte 32 0) bits))))
++                      (t
++                       (sb-kernel:make-single-float
++                        (or (decimal-to-float-bits w q nil)
++                            (return-from make-float/fast nil)))))))
++          (if negative (- value) value))))))
++)
++
+ (defun make-float (stream)
+   ;; Assume that the contents of *read-buffer* are a legal float, with nothing
+   ;; else after it.
++  #+64-bit
++  (let ((value (make-float/fast *read-buffer*)))
++    (when value
++      (return-from make-float value)))
+   (let ((buf *read-buffer*)
+         (negative-fraction nil)
+         (number 0)
+-- 
+2.56.0
+

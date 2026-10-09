@@ -1,0 +1,115 @@
+From 57f2ecf1cdfbc3e27aa0f3fbd26014f9be82b652 Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Fri, 9 Oct 2026 05:16:47 +0200
+Subject: [PATCH 05/13] Exact fast path for fixed-position float digits
+
+With an absolute position (~F, ~E, ~G, ~$), %FLONUM-TO-DIGITS returns
+the shortest digits in a closed interval whose radius is the larger of
+half a unit at 10^POSITION and the float's half-gap. When 10^POSITION
+>= 2^E, the only decimal in it is the value rounded to a multiple of
+10^POSITION. FLONUM-TO-DIGITS/POSITION computes that exactly, with a
+fixnum shift and mask in the common case. Everything else keeps the
+original code. Output is unchanged.
+---
+ src/code/print.lisp | 84 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 84 insertions(+)
+
+diff --git a/src/code/print.lisp b/src/code/print.lisp
+index 40d8bbf8c..92d6d06d6 100644
+--- a/src/code/print.lisp
++++ b/src/code/print.lisp
+@@ -1781,7 +1781,91 @@ variable: an unreadable object representing the error is printed instead.")
+                 (scale-p r s m+ m-)
+                 (scale r s m+ m-))))))))
+ 
++(define-load-time-global +powers-of-ten-to-18+
++  #.(coerce (loop for i from 0 to 18 collect (expt 10 i)) 'simple-vector))
++
++;;; Fast path for FLONUM-TO-DIGITS with an absolute POSITION (as used by
++;;; ~F, ~E, ~G and ~$). Return (values K DIGIT-STRING) or NIL to fall back.
++;;;
++;;; With a position, %FLONUM-TO-DIGITS generates the shortest digits within
++;;; a closed interval around the value whose radius is the larger of half
++;;; a unit at 10^POSITION and the float's own half-gap 2^(E-1). When
++;;; 10^POSITION >= 2^E, the radius is exactly half a unit, and the only
++;;; decimal in the interval is the value rounded to a multiple of
++;;; 10^POSITION. That is computed here exactly. Exact ties (two
++;;; candidates) and results that round to zero go to the general code.
++(defun flonum-to-digits/position (float position)
++  (declare (type (or single-float double-float) float)
++           (type fixnum position))
++  (multiple-value-bind (f e) (integer-decode-float float)
++    ;; Same subnormal alignment as %FLONUM-TO-DIGITS, which defines the
++    ;; half-gap used there.
++    (let ((float-digits (float-digits float)))
++      (when (< (float-precision float) float-digits)
++        (let ((shift (- float-digits (integer-length f))))
++          (setq f (ash f shift)
++                e (- e shift)))))
++    ;; 10^POSITION >= 2^E
++    (unless (if (>= position 0)
++                (or (<= e 0) (>= (expt 10 position) (ash 1 e)))
++                (and (< e 0) (>= (ash 1 (- e)) (expt 10 (- position)))))
++      (return-from flonum-to-digits/position nil))
++    ;; value / 10^POSITION = Q + R/DEN. ROUND compares R with DEN/2:
++    ;; -1 below, 0 at a tie, 1 above.
++    (multiple-value-bind (q round)
++        (if (and (< e 0)
++                 (<= -18 position 0)
++                 (< f (truncate most-positive-fixnum
++                                (svref +powers-of-ten-to-18+ (- position)))))
++            ;; The common case, e.g. ~,2F of an ordinary value. NUM fits a
++            ;; fixnum and DEN = 2^-E, so the division is a shift and a mask.
++            (let ((num (* f (svref +powers-of-ten-to-18+ (- position))))
++                  (shift (- e)))
++              (declare (type (and fixnum unsigned-byte) num)
++                       (type (integer 1) shift))
++              (if (>= shift sb-vm:n-fixnum-bits)
++                  (values 0 -1)   ; NUM < 2^SHIFT / 2: rounds to zero
++                  (let ((r (logand num (1- (ash 1 shift))))
++                        (half (ash 1 (1- shift))))
++                    (values (ash num (- shift))
++                            (cond ((< r half) -1) ((= r half) 0) (t 1))))))
++            (let ((num (* f (if (> e 0) (ash 1 e) 1)
++                          (if (< position 0) (expt 10 (- position)) 1)))
++                  (den (* (if (< e 0) (ash 1 (- e)) 1)
++                          (if (> position 0) (expt 10 position) 1))))
++              (multiple-value-bind (q r) (floor num den)
++                (let ((twice-r (* 2 r)))
++                  (values q (cond ((< twice-r den) -1)
++                                  ((= twice-r den) 0)
++                                  (t 1)))))))
++      (when (or (zerop q) (zerop round))
++        (return-from flonum-to-digits/position nil))
++      ;; G is below 2^53, since 10^POSITION >= 2^E.
++      (let* ((g (if (plusp round) (1+ q) q))
++             (n (do ((n 1 (1+ n))
++                     (p 10 (* p 10)))
++                    ((< g p) n)))
++             (k (+ position n)))
++        (declare (type (unsigned-byte 62) g)
++                 (type (integer 1 19) n))
++        (loop (multiple-value-bind (g/10 rem) (truncate g 10)
++                (unless (zerop rem) (return))
++                (setq g g/10 n (1- n))))
++        (let ((string (make-string n :element-type 'base-char)))
++          (loop for i from (1- n) downto 0
++                do (multiple-value-bind (g/10 digit) (truncate g 10)
++                     (setf (schar string i) (code-char (+ (char-code #\0) digit))
++                           g g/10)))
++          (values k string))))))
++
+ (defun flonum-to-digits (float &optional position relativep)
++  (when (and position
++             (not relativep)
++             (typep float '(or single-float double-float))
++             (not (zerop float)))
++    (multiple-value-bind (k string) (flonum-to-digits/position float position)
++      (when k
++        (return-from flonum-to-digits (values k string)))))
+   #+64-bit
+   (when (and (not position)
+              (typep float '(or single-float double-float))
+-- 
+2.56.0
+
