@@ -11,6 +11,8 @@
 
 (in-package "CL-USER")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 (defun digits (f)
   "Return (values k digit-string) from SBCL's printer for positive F."
   (sb-impl::flonum-to-digits f))
@@ -118,13 +120,13 @@
 
 (defun run-edge ()
   ;; Every exponent, with minimal, maximal and near-boundary significands.
-  (loop for e from 0 below 2047
-        do (dolist (lo '(0 1 2 #xFFFFFFFF))
-             (dolist (hi '(0 1 #xFFFFF))
-               (test (sb-kernel:make-double-float (logior (ash e 20) hi) lo)))))
-  (loop for e from 0 below 255
-        do (dolist (sig '(0 1 2 #x7FFFFF #x400000))
-             (test (sb-kernel:make-single-float (logior (ash e 23) sig)))))
+  (do-combinations ((e (range 0 2046))
+                    (lo '(0 1 2 #xFFFFFFFF))
+                    (hi '(0 1 #xFFFFF)))
+    (test (sb-kernel:make-double-float (logior (ash e 20) hi) lo)))
+  (do-combinations ((e (range 0 254))
+                    (sig '(0 1 2 #x7FFFFF #x400000)))
+    (test (sb-kernel:make-single-float (logior (ash e 23) sig))))
   ;; Every double and single subnormal near the bottom.
   (loop for i from 1 to 100000
         do (test (sb-kernel:make-double-float 0 i))
@@ -145,6 +147,20 @@
                    0.1 0.3 1e10 123456.7 16777216.0))
     (test f)))
 
+;;; Check the single-floats with bit patterns from START below END, out of
+;;; all of them, below LIMIT; print failures and the progress under LOCK.
+(defun check-singles (start end limit lock)
+  (loop for bits from start below end
+        for f = (sb-kernel:make-single-float bits)
+        for problem = (check f)
+        when problem
+          do (sb-thread:with-mutex (lock)
+               (fail (*failures*) "FAIL ~S: ~A~%" f problem))
+        when (zerop (mod bits #x1000000))
+          do (sb-thread:with-mutex (lock)
+               (format t "  ~,1F%~%" (* 100 (/ bits limit)))
+               (finish-output))))
+
 (defun run-single-all ()
   "Every positive finite single-float, in parallel. Takes a while."
   (let* ((n-threads (max 1 (or (ignore-errors
@@ -155,22 +171,11 @@
          (lock (sb-thread:make-mutex)))
     (mapc #'sb-thread:join-thread
           (loop for i below n-threads
-                collect (let ((start (max 1 (* i chunk)))
-                              (end (min limit (* (1+ i) chunk))))
-                          (sb-thread:make-thread
-                           (lambda ()
-                             (loop for bits from start below end
-                                   for f = (sb-kernel:make-single-float bits)
-                                   for problem = (check f)
-                                   when problem
-                                     do (sb-thread:with-mutex (lock)
-                                          (when (< (incf *failures*) 50)
-                                            (format t "FAIL ~S: ~A~%" f problem)))
-                                   when (zerop (mod bits #x1000000))
-                                     do (sb-thread:with-mutex (lock)
-                                          (format t "  ~,1F%~%"
-                                                  (* 100 (/ bits limit)))
-                                          (finish-output))))))))))
+                collect (sb-thread:make-thread
+                         #'check-singles
+                         :arguments (list (max 1 (* i chunk))
+                                          (min limit (* (1+ i) chunk))
+                                          limit lock))))))
 
 (let* ((args (rest sb-ext:*posix-argv*))
        (mode (or (first args) "all"))

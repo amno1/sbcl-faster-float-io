@@ -1,0 +1,106 @@
+From ca1a07fb2383b378926e7150cd5b945ca6f6f21e Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Sat, 10 Oct 2026 10:52:16 +0200
+Subject: [PATCH 3/3] Test integer printing in base 10 and other bases
+
+---
+ tests/integer-print.pure.lisp | 87 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 87 insertions(+)
+ create mode 100644 tests/integer-print.pure.lisp
+
+diff --git a/tests/integer-print.pure.lisp b/tests/integer-print.pure.lisp
+new file mode 100644
+index 000000000..8f052158f
+--- /dev/null
++++ b/tests/integer-print.pure.lisp
+@@ -0,0 +1,87 @@
++;;;; Tests of printing integers: base-10 words without a division per
++;;;; digit (%OUTPUT-WORD-IN-BASE-10, used by %OUTPUT-INTEGER-IN-BASE in
++;;;; src/code/print.lisp), bignums, and other bases. In base 2 and 4,
++;;;; MOST-NEGATIVE-FIXNUM used to overflow PRIN1-TO-STRING's buffer, sized by
++;;;; APPROX-CHARS-IN-REPR.
++
++;;;; This software is part of the SBCL system. See the README file for
++;;;; more information.
++;;;;
++;;;; While most of SBCL is derived from the CMU CL system, the test
++;;;; files (like this one) were written from scratch after the fork
++;;;; from CMU CL.
++;;;;
++;;;; This software is in the public domain and is provided with
++;;;; absolutely no warranty. See the COPYING and CREDITS files for
++;;;; more information.
++
++;;; The digits of N in BASE, with a minus sign if N is negative, computed
++;;; with a plain division loop, independent of the printer.
++(defun integer-print-reference (n &optional (base 10))
++  (if (zerop n)
++      "0"
++      (let ((digits '())
++            (m (abs n)))
++        (loop until (zerop m)
++              do (multiple-value-bind (q r) (truncate m base)
++                   (push (digit-char r base) digits)
++                   (setq m q)))
++        (coerce (if (minusp n) (cons #\- digits) digits) 'string))))
++
++;;; The integers the tests print, all with both signs: every power of ten
++;;; up to 10^80 and its neighbours; the fixnum and word limits; bignums
++;;; whose 19-digit chunks are zero or start with zeros (bignums are
++;;; printed in chunks of 19 digits); random words of every length; and
++;;; random bignums of up to 2,048 bits. MOST-NEGATIVE-FIXNUM is among them,
++;;; as -(1+ MOST-POSITIVE-FIXNUM).
++(defparameter *integer-print-values*
++  (let ((state (sb-ext:seed-random-state 29))
++        (values '()))
++    (flet ((add (n) (push n values) (push (- n) values)))
++      (loop for k from 0 to 80
++            do (add (1- (expt 10 k))) (add (expt 10 k)) (add (1+ (expt 10 k))))
++      (dolist (n (list most-positive-fixnum (1+ most-positive-fixnum)
++                       (1- (expt 2 63)) (expt 2 63)
++                       (1- (expt 2 64)) (expt 2 64) (1+ (expt 2 64))))
++        (add n))
++      (loop for chunks from 1 to 6
++            do (dolist (k '(1 7 99 12345 9999999999999999999))
++                 (dolist (small '(0 1 10 123456789))
++                   (add (+ (* k (expt 10 (* 19 chunks))) small)))))
++      (loop repeat 5000
++            do (add (random (ash 1 (1+ (random 64 state))) state)))
++      (loop repeat 500
++            do (add (random (ash 1 (+ 65 (random 1984 state))) state))))
++    values))
++
++(with-test (:name (:integer-print :known-values))
++  (loop for (n expected) in '((0 "0") (7 "7") (-7 "-7") (10 "10")
++                              (100000000 "100000000")
++                              (10000000000000000 "10000000000000000")
++                              (12345678901234567890 "12345678901234567890")
++                              (18446744073709551615 "18446744073709551615")
++                              (10000000000000000000000000000000000000001
++                               "10000000000000000000000000000000000000001"))
++        do (assert (string= (prin1-to-string n) expected) ()
++                   "~A printed as ~S" expected (prin1-to-string n))))
++
++;;; Every way of printing an integer in base 10 must give the reference
++;;; digits.
++(with-test (:name (:integer-print :base-10))
++  (dolist (n *integer-print-values*)
++    (let ((digits (integer-print-reference n)))
++      (assert (string= (prin1-to-string n) digits))
++      (assert (string= (princ-to-string n) digits))
++      (assert (string= (with-output-to-string (s) (prin1 n s)) digits))
++      (assert (string= (format nil "~D" n) digits))
++      (assert (string= (let ((*print-radix* t)) (prin1-to-string n))
++                       (concatenate 'string digits "."))))))
++
++;;; Other bases keep the old loop, but share %OUTPUT-INTEGER-IN-BASE with
++;;; the base-10 code: they must print as before.
++(with-test (:name (:integer-print :other-bases))
++  (dolist (base '(2 8 9 11 16 36))
++    (let ((*print-base* base))
++      (dolist (n *integer-print-values*)
++        (assert (string= (princ-to-string n) (integer-print-reference n base)) ()
++                "~D in base ~D printed as ~S" n base (princ-to-string n))))))
+-- 
+2.56.0
+

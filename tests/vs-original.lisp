@@ -62,21 +62,22 @@
                  1000000))
       (state (sb-ext:seed-random-state 13)))
   ;; Every power of two (zmij's irregular path) and its neighbours.
-  (loop for e from 1 below 2047
-        do (dolist (lo '(0 1)) (dolist (hi '(0 #xFFFFF))
-             (test (sb-kernel:make-double-float (logior (ash e 20) hi)
-                                                (if (= hi 0) lo #xFFFFFFFF))))))
-  (loop for e from 1 below 255
-        do (dolist (f '(0 1 #x7FFFFF))
-             (test (sb-kernel:make-single-float (logior (ash e 23) f)))))
+  (cl-user::do-combinations ((e (cl-user::range 1 2046))
+                             (lo '(0 1))
+                             (hi '(0 #xFFFFF)))
+    (test (sb-kernel:make-double-float (logior (ash e 20) hi)
+                                       (if (= hi 0) lo #xFFFFFFFF))))
+  (cl-user::do-combinations ((e (cl-user::range 1 254))
+                             (f '(0 1 #x7FFFFF)))
+    (test (sb-kernel:make-single-float (logior (ash e 23) f))))
   ;; Exact ties: values ending in .5, .25, .125, .625 at many scales.
   (loop for n from 1 to 200000
         do (test (+ n 0.5d0)) (test (+ n 0.5f0)) (test (/ n 8d0)) (test (/ n 8f0))
            (test (* n 1024.5d0)) (test (+ (* n 1d6) 0.625d0)))
-  (loop for e from 0 to 60
-        do (loop for n from 1 to 2000
-                 do (test (+ (expt 2d0 e) (/ n 4d0)))
-                    (test (+ (expt 2f0 (min e 30)) (/ n 4f0)))))
+  (cl-user::do-combinations ((e (cl-user::range 0 60))
+                             (n (cl-user::range 1 2000)))
+    (test (+ (expt 2d0 e) (/ n 4d0)))
+    (test (+ (expt 2f0 (min e 30)) (/ n 4f0))))
   ;; Random bit patterns.
   (dotimes (i count)
     (test (sb-kernel:make-double-float (random (ash 1 31) state)

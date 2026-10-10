@@ -13,6 +13,8 @@
 
 (in-package "SB-IMPL")
 
+(load (merge-pathnames "common.lisp" *load-truename*))
+
 ;;; src/code/print.lisp of the SBCL running this test.
 (defparameter *print-source*
   (namestring (merge-pathnames "../../src/code/print.lisp"
@@ -38,58 +40,85 @@
      (lambda (k) (values k (get-output-stream-string s)))
      x)))
 
-(let* ((args (rest sb-ext:*posix-argv*))
-       (start (if (first args) (parse-integer (first args) :radix 16) 1))
-       (end (if (second args) (parse-integer (second args) :radix 16) #x7F800000))
-       (n-threads (or (ignore-errors (parse-integer (sb-ext:posix-getenv "THREADS"))) 8))
-       (lock (sb-thread:make-mutex :name "single-all"))
-       (failures 0)
-       (subnormal-differences 0)
-       (checked 0)
-       (next start)
-       (chunk (expt 2 20))
-       (report-every (max 1 (floor (- end start) 64)))
-       (next-report (+ start report-every))
-       (start-time (get-internal-real-time)))
+;;; NIL if X prints the same with both printers, else the list
+;;; (X ORIGINAL-K ORIGINAL-DIGITS ZMIJ-K ZMIJ-DIGITS).
+(defun digit-mismatch (x)
+  (multiple-value-bind (k1 s1) (reference-digits x)
+    (multiple-value-bind (k2 s2) (flonum-to-digits x)
+      (unless (and (= k1 k2) (string= s1 s2))
+        (list x k1 s1 k2 s2)))))
+
+;;; Check the singles with bit patterns from FROM below TO. Return the
+;;; mismatches of normal floats, and the number of subnormals that differ.
+(defun check-range (from to)
+  (loop for bits from from below to
+        for mismatch = (digit-mismatch (sb-kernel:make-single-float bits))
+        for subnormal = (< bits #x00800000)
+        when (and mismatch subnormal) count t into subnormal-differences
+        when (and mismatch (not subnormal)) collect mismatch into mismatches
+        finally (return (values mismatches subnormal-differences))))
+
+;;; The range to check, from the command line, and the state the threads
+;;; share. Global, so that every thread sees the same values; changed only
+;;; with *LOCK* held.
+(defparameter *start*
+  (let ((arg (second sb-ext:*posix-argv*)))
+    (if arg (parse-integer arg :radix 16) 1)))
+(defparameter *end*
+  (let ((arg (third sb-ext:*posix-argv*)))
+    (if arg (parse-integer arg :radix 16) #x7F800000)))
+(defparameter *chunk* (expt 2 20))
+(defparameter *report-every* (max 1 (floor (- *end* *start*) 64)))
+(defvar *lock* (sb-thread:make-mutex :name "single-all"))
+(defvar *next* *start*)
+(defvar *next-report* *report-every*)
+(defvar *checked* 0)
+(defvar *failures* 0)
+(defvar *subnormal-differences* 0)
+(defvar *start-time* (get-internal-real-time))
+
+;;; The next chunk of bit patterns, as (VALUES FROM TO), or NIL when none
+;;; is left.
+(defun take-chunk ()
+  (sb-thread:with-mutex (*lock*)
+    (when (< *next* *end*)
+      (let ((from *next*))
+        (setf *next* (min *end* (+ from *chunk*)))
+        (values from *next*)))))
+
+;;; Add a checked chunk's results to the totals, print its mismatches,
+;;; and print the progress every 1/64 of the range.
+(defun record-chunk (from to mismatches subnormal-differences)
+  (sb-thread:with-mutex (*lock*)
+    (incf *checked* (- to from))
+    (incf *subnormal-differences* subnormal-differences)
+    (loop for (x k1 s1 k2 s2) in mismatches
+          do (cl-user::fail (*failures*)
+               "FAIL ~S: original ~D ~S, zmij ~D ~S~%" x k1 s1 k2 s2))
+    ;; By the count checked, not by TO: chunks finish out of order.
+    (when (>= *checked* *next-report*)
+      (incf *next-report* *report-every*)
+      (format t "  ~5,1F%  ~:D checked, ~D failure~:P, ~D s~%"
+              (* 100 (/ *checked* (- *end* *start*)))
+              *checked* *failures*
+              (round (- (get-internal-real-time) *start-time*)
+                     internal-time-units-per-second))
+      (finish-output))))
+
+(defun worker ()
+  (loop
+    (multiple-value-bind (from to) (take-chunk)
+      (unless from (return))
+      (multiple-value-bind (mismatches subnormal-differences) (check-range from to)
+        (record-chunk from to mismatches subnormal-differences)))))
+
+(let ((n-threads (or (ignore-errors (parse-integer (sb-ext:posix-getenv "THREADS"))) 8)))
   (format t "Checking singles #x~8,'0X below #x~8,'0X on ~D threads~%"
-          start end n-threads)
+          *start* *end* n-threads)
   (finish-output)
-  (flet ((worker ()
-           (loop
-             (let (from to)
-               ;; Take the next chunk of bit patterns.
-               (sb-thread:with-mutex (lock)
-                 (when (>= next end) (return))
-                 (setq from next
-                       to (min end (+ next chunk))
-                       next to))
-               (let ((local-failures '())
-                     (local-subnormal 0))
-                 (loop for bits from from below to
-                       for x = (sb-kernel:make-single-float bits)
-                       do (multiple-value-bind (k1 s1) (reference-digits x)
-                            (multiple-value-bind (k2 s2) (flonum-to-digits x)
-                              (unless (and (= k1 k2) (string= s1 s2))
-                                (if (< bits #x00800000)
-                                    (incf local-subnormal)
-                                    (push (list x k1 s1 k2 s2) local-failures))))))
-                 (sb-thread:with-mutex (lock)
-                   (incf checked (- to from))
-                   (incf subnormal-differences local-subnormal)
-                   (dolist (f (nreverse local-failures))
-                     (when (< (incf failures) 50)
-                       (apply #'format t "FAIL ~S: original ~D ~S, zmij ~D ~S~%" f)))
-                   (when (>= to next-report)
-                     (setq next-report (+ next-report report-every))
-                     (format t "  ~5,1F%  ~:D checked, ~D failure~:P, ~,0F s~%"
-                             (* 100 (/ (- to start) (- end start)))
-                             checked failures
-                             (/ (- (get-internal-real-time) start-time)
-                                internal-time-units-per-second))
-                     (finish-output))))))))
-    (mapc #'sb-thread:join-thread
-          (loop repeat n-threads collect (sb-thread:make-thread #'worker))))
+  (mapc #'sb-thread:join-thread
+        (loop repeat n-threads collect (sb-thread:make-thread #'worker)))
   (format t "~:D checked; ~:D subnormal difference~:P (expected)~%"
-          checked subnormal-differences)
-  (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp failures) failures)
-  (sb-ext:exit :code (if (plusp failures) 1 0)))
+          *checked* *subnormal-differences*)
+  (format t "~:[OK~;FAILED~]: ~D failure~:P~%" (plusp *failures*) *failures*)
+  (sb-ext:exit :code (if (plusp *failures*) 1 0)))

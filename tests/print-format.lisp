@@ -98,6 +98,19 @@
 (defun random-single (state)
   (sb-kernel:make-single-float (- (random (ash 1 32) state) (ash 1 31))))
 
+;;; M * 10^P as a double, and as a single where singles reach that far:
+;;; the values that do not overflow.
+(defun boundary-floats (p m)
+  (remove nil
+          (list (ignore-errors (coerce (* m (expt 10 p)) 'double-float))
+                (when (< -46 p 30)
+                  (ignore-errors (coerce (* (min m 99999999) (expt 10 p))
+                                         'single-float))))))
+
+(defun test-both-signs (x)
+  (test x)
+  (test (- x)))
+
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))
                  200000)))
@@ -107,21 +120,16 @@
           (state (sb-ext:seed-random-state 11)))
       ;; Every layout boundary: k from -330 to 310 around the switch
       ;; points -3 and 8, with 1, 2 and many digits.
-      (loop for p from -330 to 308
-            do (dolist (m '(1 12 123456789 1234567890123456 9999999999999999))
-                 (dolist (x (list (ignore-errors (coerce (* m (expt 10 p)) 'double-float))
-                                  (when (< -46 p 30)
-                                    (ignore-errors (coerce (* (min m 99999999) (expt 10 p))
-                                                           'single-float)))))
-                   (when x
-                     (test x)
-                     (test (- x))))))
+      (cl-user::do-combinations
+          ((p (cl-user::range -330 308))
+           (m '(1 12 123456789 1234567890123456 9999999999999999))
+           (x (boundary-floats p m)))
+        (test-both-signs x))
       (dolist (x (list least-positive-double-float most-positive-double-float
                        least-positive-single-float most-positive-single-float
                        1d0 1.0 0.1 0.1d0 1d7 1d8 1e7 1e8 0.001 0.0001 1d-3 1d-4
                        123456.7 1234567.0 12345678.0 100.0 1d16 1d17))
-        (test x)
-        (test (- x)))
+        (test-both-signs x))
       (dotimes (i count)
         (test (random-double state))
         (test (random-single state)))))

@@ -1,13 +1,14 @@
-# Faster float printing and reading in SBCL
+# Faster number printing and reading in SBCL
 
 This is a summary of a set of SBCL patches that make printing and reading
 floating-point numbers several times faster, without changing what is printed or
-read. This folder contains everything used to check that claim and to measure
-the speed: the tests, the benchmarks and their results.  [`tests.md`](tests.md)
-explains how to run them, and [`details.md`](details.md) has a more concrete,
-in-depth description of the changes.
+read, and of two smaller follow-ups for integers. This folder contains
+everything used to check that claim and to measure the speed: the tests, the
+benchmarks and their results.  [`tests.md`](tests.md) explains how to run them,
+and [`details.md`](details.md) has a more concrete, in-depth description of the
+changes. The integer work is described in [`integers.md`](integers.md).
 
-The work is in two parts:
+The float work is in two parts:
 
 - **Printing**: Victor Zverovich's [zmij](https://github.com/vitaut/zmij)
   shortest-digit algorithm (`src/code/zmij.lisp`, hooked into
@@ -23,8 +24,20 @@ The work is in two parts:
 Printing and reading are in separate branches so each part can be
 tested and benchmarked separately against stock SBCL.
 
+The integer work builds on them, again in two branches:
+
+- **Reading**: a fast path in the reader's `read-token` that recognizes
+  integers and floats directly in the string being read. Branch
+  [`sbcl-read-fast`](https://github.com/amno1/sbcl/tree/sbcl-read-fast), on top
+  of `sbcl-parse-float`.
+
+- **Printing**: base-10 printing of word-sized integers with zmij's digit
+  routine instead of a division per digit. Branch
+  [`sbcl-int-print`](https://github.com/amno1/sbcl/tree/sbcl-int-print), on top
+  of `sbcl-zmij`.
+
 Branch [`sb-simd-512`](https://github.com/amno1/sbcl/tree/sb-simd-512)
-has both. That is my "everyday" SBCL; I put there everything so I can
+has all of it. That is my "everyday" SBCL; I put there everything so I can
 use it myself.
 
 ## In short
@@ -56,6 +69,12 @@ use it myself.
   `1.4295402e-39`. Both read back as the same float.
 
   **Read results are unchanged.**
+
+  **Integers** (see [`integers.md`](integers.md)): reading an integer of up to
+  18 digits with `read-from-string` is about **2.2x faster**, and the same fast
+  path makes reading floats another 1.5-2x faster on top of Eisel-Lemire.
+  Printing an 18-digit integer is **1.4-2x faster**. Results are unchanged here
+  too.
 
   The fast paths are for **64-bit platforms**. 32-bit platforms keep the
   original code.
@@ -281,7 +300,7 @@ is `third-party.lisp`.
 **Correctness**: 1,000,000 random doubles and 1,000,000 random singles (both
 signs, subnormals included) printed with `prin1-to-string` and parsed back. A
 result must be the original float, bit for bit; an error counts as a failure.
-
+n
 | failures                 |  doubles | singles |
 |--------------------------|---------:|--------:|
 | `sb-ext:parse-float`     |        0 |       0 |
@@ -436,6 +455,13 @@ A bug in SBCL's reader, now fixed upstream:
   `truncate-exponent` could cross zero. The fix is upstream as
   [`cf400f389`](https://github.com/sbcl/sbcl/commit/cf400f389).
 
+A bug in SBCL's printer, sent upstream:
+
+  `(let ((*print-base* 2)) (prin1-to-string most-negative-fixnum))` signals an
+  internal error, and so does base 4: `prin1-to-string` sizes its string with
+  an estimate one bit too small for `most-negative-fixnum`. Found while testing
+  the integer printer; see [`integers.md`](integers.md).
+
 ## Patches
 
 On branch `sbcl-zmij` (printing and `format`), about 2,700 lines including
@@ -481,6 +507,20 @@ Applying both series on top of each other conflicts only in `COPYING`, where
 `p13` and `r5` extend the same sentence; the
 [`sb-simd-512`](https://github.com/amno1/sbcl/tree/sb-simd-512) branch has both,
 merged. Applying all patches of a series gives exactly the source of its branch.
+
+The integer work adds two more series, about 460 lines in all, made from their
+branches:
+
+- `n1`-`n2`, on top of `r1`-`r5` (branch `sbcl-read-fast`): the fast path in
+  `read-token`, 140 lines, and its tests, `tests/read-number.pure.lisp`.
+- `i1`-`i3`, on top of `p1`-`p13` (branch `sbcl-int-print`): base-10 word
+  printing, 40 lines; the `most-negative-fixnum` fix with its regression test;
+  and the tests, `tests/integer-print.pure.lisp`.
+
+```sh
+git am patches/n*.patch    # after r1 ... r5
+git am patches/i*.patch    # after p1 ... p13
+```
 
 ## Credits
 

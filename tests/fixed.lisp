@@ -76,51 +76,59 @@
                  100000))
       (state (sb-ext:seed-random-state 5)))
   ;; Exact ties and near-ties: n/2^k and decimal values with few digits.
-  (loop for n from 1 to 4000
-        do (dolist (x (list (/ n 8d0) (/ n 8f0) (/ n 1000d0) (/ n 100f0)
-                            (+ n 0.5d0) (+ n 0.5f0) (* n 0.005d0) (* n 0.05f0)
-                            (- 1 (/ 1d0 n)) (* n 1.005d0)))
-             (loop for position from -6 to 3 do (test-both x position))))
+  (cl-user::do-combinations
+      ((n (cl-user::range 1 4000))
+       (x (list (/ n 8d0) (/ n 8f0) (/ n 1000d0) (/ n 100f0)
+                (+ n 0.5d0) (+ n 0.5f0) (* n 0.005d0) (* n 0.05f0)
+                (- 1 (/ 1d0 n)) (* n 1.005d0)))
+       (position (cl-user::range -6 3)))
+    (test-both x position))
   ;; Odd significands whose rounding-interval endpoints (midpoints between
   ;; floats) are short decimals: doubles from 2^53 up, singles from 2^24
   ;; up, where midpoints are integers. Fine positions use the float's own
   ;; interval, closed; this is where "closed" matters.
-  (loop for e from 1 to 12
-        do (loop for j from 0 below 400
-                 for f = (+ (ash 1 52) 1 (* 2 j) (* 2 (random (ash 1 40) state)))
-                 do (loop for position from -3 to 6
-                          do (test-both (scale-float (float f 1d0) e) position))))
-  (loop for e from 1 to 12
-        do (loop for j from 0 below 400
-                 for f = (+ (ash 1 23) 1 (* 2 (random (ash 1 21) state)))
-                 do (loop for position from -3 to 6
-                          do (test-both (scale-float (float f 1f0) e) position))))
+  (cl-user::do-combinations
+      ((e (cl-user::range 1 12))
+       (f (loop for j from 0 below 400
+                collect (+ (ash 1 52) 1 (* 2 j) (* 2 (random (ash 1 40) state)))))
+       (position (cl-user::range -3 6)))
+    (test-both (scale-float (float f 1d0) e) position))
+  (cl-user::do-combinations
+      ((e (cl-user::range 1 12))
+       (f (loop repeat 400
+                collect (+ (ash 1 23) 1 (* 2 (random (ash 1 21) state)))))
+       (position (cl-user::range -3 6)))
+    (test-both (scale-float (float f 1f0) e) position))
   ;; Values below one unit at the position: rounding to zero (digits "0")
   ;; and up to one unit, around half a unit, at positions below and at or
   ;; above zero.
-  (loop for position from -12 to 3
-        do (dolist (factor '(1d-9 1d-3 0.1d0 0.3d0 0.49d0 0.4999999d0 0.5000001d0
-                             0.51d0 0.7d0 0.99d0 0.9999999d0))
-             (let ((x (* factor (expt 10d0 position))))
-               (test-both x position)
-               (test-both (coerce x 'single-float) position)
-               (test-both (* x (1+ (random 1d-3 state))) position))))
+  (cl-user::do-combinations
+      ((position (cl-user::range -12 3))
+       (factor '(1d-9 1d-3 0.1d0 0.3d0 0.49d0 0.4999999d0 0.5000001d0
+                 0.51d0 0.7d0 0.99d0 0.9999999d0)))
+    (let ((x (* factor (expt 10d0 position))))
+      (test-both x position)
+      (test-both (coerce x 'single-float) position)
+      (test-both (* x (1+ (random 1d-3 state))) position)))
   (dotimes (i 200000)
     (let ((position (- (random 15 state) 12)))
       (test-both (* (random 1d0 state) (expt 10d0 position)) position)))
   ;; Exact ties (q + 1/2 units) at positions 0 to 4, where q can be a
   ;; multiple of 10 (the original then rounds down to the shorter q).
-  (loop for position from 0 to 4
-        do (loop for q from 1 to 400
-                 do (dolist (q (list q (* 10 q) (+ (* 10 q) 9)))
-                      (let ((x (* (+ q 1/2) (expt 10 position))))
-                        (test-both (coerce x 'double-float) position)
-                        (when (< x (expt 2 24))
-                          (test-both (coerce x 'single-float) position))))))
+  (cl-user::do-combinations
+      ((position (cl-user::range 0 4))
+       (n (cl-user::range 1 400))
+       (q (list n (* 10 n) (+ (* 10 n) 9))))
+    (let ((x (* (+ q 1/2) (expt 10 position))))
+      (test-both (coerce x 'double-float) position)
+      (when (< x (expt 2 24))
+        (test-both (coerce x 'single-float) position))))
   ;; Rounding across a power of ten, and values near one unit.
-  (dolist (x (list 9.995d0 9.996d0 99.95d0 0.0095d0 0.995 0.9999999d0
-                   0.01d0 0.015d0 0.005d0 0.001 1d0 1.0 0.5d0 0.05d0))
-    (loop for position from -10 to 3 do (test-both x position)))
+  (cl-user::do-combinations
+      ((x (list 9.995d0 9.996d0 99.95d0 0.0095d0 0.995 0.9999999d0
+                0.01d0 0.015d0 0.005d0 0.001 1d0 1.0 0.5d0 0.05d0))
+       (position (cl-user::range -10 3)))
+    (test-both x position))
   ;; Random values of ordinary magnitude with typical precisions, and
   ;; random bit patterns with any precision.
   (dotimes (i count)

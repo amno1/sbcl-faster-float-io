@@ -1,0 +1,197 @@
+From 0be9011dcb855ee8a75cd7e0a11a23e659c77822 Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Sat, 10 Oct 2026 01:58:52 +0200
+Subject: [PATCH 2/2] Add Regression Test for read-number/fast
+
+---
+ tests/read-number.pure.lisp | 178 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 178 insertions(+)
+ create mode 100644 tests/read-number.pure.lisp
+
+diff --git a/tests/read-number.pure.lisp b/tests/read-number.pure.lisp
+new file mode 100644
+index 000000000..3453ff5b2
+--- /dev/null
++++ b/tests/read-number.pure.lisp
+@@ -0,0 +1,178 @@
++;;;; Tests of the reader's fast path for numbers read from a string
++;;;; (READ-NUMBER/FAST, called by READ-TOKEN in src/code/reader.lisp).
++
++;;;; This software is part of the SBCL system. See the README file for
++;;;; more information.
++;;;;
++;;;; While most of SBCL is derived from the CMU CL system, the test
++;;;; files (like this one) were written from scratch after the fork
++;;;; from CMU CL.
++;;;;
++;;;; This software is in the public domain and is provided with
++;;;; absolutely no warranty. See the COPYING and CREDITS files for
++;;;; more information.
++
++;;; The fast path is only taken for string input streams. Reading the same
++;;; text through a concatenated stream around a string stream uses the
++;;; normal reader, so comparing the two checks that the fast path changes
++;;; nothing: the objects read, where each read stops, and the errors.
++
++;;; Every object in STRING, read with READER from STREAM, followed by the
++;;; character the stream is left at; or the type of the error signalled.
++(defun read-number-outcome (string reader make-stream)
++  (handler-case
++      (let ((stream (funcall make-stream string)))
++        (loop for object = (funcall reader stream nil stream)
++              until (eq object stream)
++              collect (list object (peek-char nil stream nil :eof))))
++    (error (c) (list :error (type-of c)))))
++
++(defun read-number-same-p (a b)
++  (cond ((and (stringp a) (stringp b))
++         (string= a b))
++        ((and (symbolp a) (symbolp b) (null (symbol-package a)))
++         (and (null (symbol-package b)) (string= a b)))
++        ((and (consp a) (consp b))
++         (and (read-number-same-p (car a) (car b))
++              (read-number-same-p (cdr a) (cdr b))))
++        (t (eql a b))))
++
++;;; Check that STRING reads the same with and without the fast path.
++(defun read-number-check (string &optional (reader #'read))
++  (let ((fast (read-number-outcome string reader #'make-string-input-stream))
++        (normal (read-number-outcome
++                 string reader
++                 (lambda (s) (make-concatenated-stream (make-string-input-stream s))))))
++    (assert (read-number-same-p fast normal) ()
++            "~S (base ~D, ~A): fast path ~S, normal reader ~S"
++            string *read-base* *read-default-float-format* fast normal)))
++
++(defparameter *read-number-edge-cases*
++  '("0" "-0" "+0" "00012" "1." "-1." "123456789012345678" "-123456789012345678"
++    "1234567890123456789" "999999999999999999" "12345678901234567890123"
++    "0.0" "-0.0" ".5" "-.5" "+.5" "1.5" "1.e5" "1e5" "1E5" "1d5" "1D5" "1f5"
++    "1s5" "1l5" "1r5" "1.5e-3" "1.5e+3" "1e400" "1e-400" "1d309" "1d-330"
++    "1.7976931348623157d308" "1.7976931348623159d308" "4.9406564584124654d-324"
++    "3.4028235e38" "3.5e38" "0.10000000000000000000001" "1e100001"
++    "123456789012345678901234567890.5"
++    "1e" "1e+" "1.5e" "." "+" "-" "+." "-." ".e5" "1.5.5" "1..5" ".5." "5.."
++    "-.e1" "1/2" "-3/4" "123abc" "abc" "1a" "a1" "12\\3" "1|2|3" "|12|"
++    "cl:car" "12:34" "#x1F" "#b101" "1(2)" "(1 2.5 -3)" "1 2 3" "  42  "
++    "1;comment" "1'x" "1\"x\"" "1`x" "12#34" "1.5d0 2.5f0 3" "+5e+5" "+5e-5"
++    "1.0e0" "1.0E0x"))
++
++;;; Deterministic random number-like tokens: optional sign, up to 21
++;;; digits, an optional point and fraction, an optional exponent with one
++;;; of several markers (including R and a letter that is no marker).
++(defun read-number-random-token (state)
++  (flet ((pick (&rest choices) (nth (random (length choices) state) choices))
++         (digits (n)
++           (with-output-to-string (s)
++             (dotimes (i n) (write-char (digit-char (random 10 state)) s)))))
++    (concatenate 'string
++                 (pick "" "-" "+")
++                 (digits (random 22 state))
++                 (pick "" "." (concatenate 'string "." (digits (random 22 state))))
++                 (pick "" (format nil "~C~A~D"
++                                  (char "eEsSfFdDlLrRx" (random 13 state))
++                                  (pick "" "-" "+")
++                                  (random 400 state))))))
++
++;;; The strings the equivalence tests read: 10,000 random tokens, and
++;;; 1,000 strings that each hold four random tokens with a space and
++;;; parentheses between them.
++(defparameter *read-number-random-tokens*
++  (let ((state (sb-ext:seed-random-state 47)))
++    (loop repeat 10000 collect (read-number-random-token state))))
++
++(defparameter *read-number-several-tokens*
++  (let ((state (sb-ext:seed-random-state 53)))
++    (loop repeat 1000
++          collect (format nil "~A ~A(~A)~A"
++                          (read-number-random-token state)
++                          (read-number-random-token state)
++                          (read-number-random-token state)
++                          (read-number-random-token state)))))
++
++;;; READ-NUMBER-CHECK every string in STRINGS.
++(defun read-number-check-all (strings &optional (reader #'read))
++  (dolist (string strings)
++    (read-number-check string reader)))
++
++(with-test (:name (:read-number :known-values))
++  (let ((*read-default-float-format* 'single-float))
++    (loop for (string expected) in
++          `(("123" 123) ("-0" 0) ("+42" 42) ("007" 7) ("12." 12)
++            ("123456789012345678" 123456789012345678)
++            ("-123456789012345678" -123456789012345678)
++            ("1234567890123456789" 1234567890123456789)
++            ("1.5" 1.5) ("-.5" -0.5) ("1e3" 1000.0) ("1.e3" 1000.0)
++            ("1.5d0" 1.5d0) ("-2.5D-1" -0.25d0) ("1s0" 1.0) ("1f2" 100.0)
++            ("1/2" 1/2))
++          do (assert (eql (read-from-string string) expected) ()
++                     "~S read as ~S, expected ~S"
++                     string (read-from-string string) expected))
++    (assert (eql (read-from-string "-0.0") -0.0))
++    (assert (eql (read-from-string "-0.0d0") -0.0d0))
++    ;; Not numbers: the fast path must leave these to READ-TOKEN.
++    (dolist (string '("12abc" "1e" "1.5.5" "+" "." "12:34x" "1|2|"))
++      (let ((object (ignore-errors (read-from-string string))))
++        (assert (not (numberp object)) () "~S read as the number ~S"
++                string object)))))
++
++(with-test (:name (:read-number :positions))
++  ;; READ consumes one whitespace character after the token,
++  ;; READ-PRESERVING-WHITESPACE none; a terminating macro character is
++  ;; never consumed.
++  (assert (equal (multiple-value-list (read-from-string "12 34")) '(12 3)))
++  (assert (equal (multiple-value-list (read-from-string "12 34" t nil
++                                                        :preserve-whitespace t))
++                 '(12 2)))
++  (assert (equal (multiple-value-list (read-from-string "1.5)")) '(1.5 3)))
++  (assert (equal (multiple-value-list (read-from-string "x 7 y" t nil :start 2))
++                 '(7 4)))
++  (with-input-from-string (s "1 2.5 (3) -4")
++    (assert (equal (list (read s) (read s) (read s) (read s))
++                   '(1 2.5 (3) -4)))))
++
++;;; With the fast path and without it, every string must read the same,
++;;; with READ and READ-PRESERVING-WHITESPACE, under both default float
++;;; formats.
++(with-test (:name (:read-number :same-as-normal-reader))
++  (loop for format in '(single-float double-float)
++        do (let ((*read-default-float-format* format))
++             (read-number-check-all *read-number-edge-cases* #'read)
++             (read-number-check-all *read-number-edge-cases* #'read-preserving-whitespace)
++             (read-number-check-all *read-number-random-tokens* #'read)
++             (read-number-check-all *read-number-random-tokens* #'read-preserving-whitespace)
++             (read-number-check-all *read-number-several-tokens* #'read))))
++
++;;; In base 16, "1e5" is an integer and the fast path must not be used.
++(with-test (:name (:read-number :read-base-16))
++  (let ((*read-base* 16))
++    (assert (eql (read-from-string "1e5") #x1e5))
++    (read-number-check-all *read-number-edge-cases*)))
++
++;;; With *READ-SUPPRESS*, nothing is built.
++(with-test (:name (:read-number :read-suppress))
++  (let ((*read-suppress* t))
++    (read-number-check-all *read-number-edge-cases*)))
++
++;;; A readtable in which #\5 is whitespace: "15" is then two tokens.
++(with-test (:name (:read-number :readtable-digit-is-whitespace))
++  (let ((*readtable* (copy-readtable)))
++    (set-syntax-from-char #\5 #\Space)
++    (assert (equal (read-from-string "(15)") '(1)))
++    (read-number-check-all *read-number-edge-cases*)
++    (read-number-check-all *read-number-random-tokens*)))
++
++;;; A readtable in which #\. is a terminating macro character: "1.5" is
++;;; then the integer 1, the macro's value and the integer 5.
++(with-test (:name (:read-number :readtable-point-is-macro))
++  (let ((*readtable* (copy-readtable)))
++    (set-macro-character #\. (lambda (stream char)
++                               (declare (ignore stream char))
++                               :dot))
++    (assert (equal (with-input-from-string (s "1.5") (list (read s) (read s) (read s)))
++                   '(1 :dot 5)))
++    (read-number-check-all *read-number-edge-cases*)))
+-- 
+2.56.0
+

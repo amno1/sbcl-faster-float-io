@@ -1,0 +1,48 @@
+== UP round 1
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits           195.0
+  read-from-string, symbol X + 18 digits         505.0
+  parse-integer, 18 digits                        40.0
+  read-from-string, integer, 1-5 digits           90.0
+  read-from-string, symbol X + 1-5 digits        410.0
+  parse-integer, 1-5 digits                       10.0
+== RF round 1
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits           125.0
+  read-from-string, symbol X + 18 digits         630.0
+  parse-integer, 18 digits                        60.0
+  read-from-string, integer, 1-5 digits           85.0
+  read-from-string, symbol X + 1-5 digits        435.0
+  parse-integer, 1-5 digits                       20.0
+== UP round 2
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits           280.0
+  read-from-string, symbol X + 18 digits         640.0
+  parse-integer, 18 digits                        65.0
+  read-from-string, integer, 1-5 digits          125.0
+  read-from-string, symbol X + 1-5 digits        455.0
+  parse-integer, 1-5 digits                       20.0
+== RF round 2
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits            85.0
+  read-from-string, symbol X + 18 digits         495.0
+  parse-integer, 18 digits                        40.0
+  read-from-string, integer, 1-5 digits           60.0
+  read-from-string, symbol X + 1-5 digits        375.0
+  parse-integer, 1-5 digits                       10.0
+== UP round 3
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits           190.0
+  read-from-string, symbol X + 18 digits         495.0
+  parse-integer, 18 digits                        45.0
+  read-from-string, integer, 1-5 digits           85.0
+  read-from-string, symbol X + 1-5 digits        335.0
+  parse-integer, 1-5 digits                       15.0
+== RF round 3
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits            85.0
+  read-from-string, symbol X + 18 digits         480.0
+  parse-integer, 18 digits                        40.0
+  read-from-string, integer, 1-5 digits           60.0
+  read-from-string, symbol X + 1-5 digits        415.0
+  parse-integer, 1-5 digits                       15.0

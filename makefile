@@ -1,4 +1,4 @@
-# Tests and benchmarks for faster float printing and reading in SBCL.
+# Tests and benchmarks for faster number printing and reading in SBCL.
 # See tests.md. Each part runs on its own build; set the paths to your
 # checkouts (each built with ./make.sh) here or on the command line:
 #
@@ -9,6 +9,8 @@
 # PARSE_FLOAT  branch sbcl-parse-float: reading and SB-EXT:PARSE-FLOAT
 # BOTH      a build with both parts (branch sb-simd-512), for
 #           single-roundtrip
+# READ_FAST  branch sbcl-read-fast: the READ-TOKEN fast path (integers.md)
+# INT_PRINT  branch sbcl-int-print: base-10 integer printing (integers.md)
 #
 # Variables the scripts read, all optional, can be given the same way
 # (make THREADS=16 test-long): THREADS, RUNS, LIMIT, DOUBLES, ORIGINAL_REV.
@@ -17,6 +19,8 @@ UPSTREAM    ?= $(HOME)/repos/sbcl-upstream
 ZMIJ        ?= $(HOME)/repos/sbcl-zmij
 PARSE_FLOAT ?= $(HOME)/repos/sbcl-parse-float
 BOTH        ?= $(HOME)/repos/sb-simd-512
+READ_FAST   ?= $(HOME)/repos/sbcl-read-fast
+INT_PRINT   ?= $(HOME)/repos/sbcl-int-print
 
 RUN = run-sbcl.sh --script
 
@@ -26,10 +30,12 @@ PRINT_TESTS = correctness vs-original fallback print-format fixed \
 READ_TESTS  = parse-float parse-float-function
 LONG_TESTS  = single-all single-roundtrip
 BENCHMARKS  = benchmark format-bench read-bench real-data
+INT_TESTS   = read-fast int-print
+INT_BENCH   = profile-reader profile-printer read-fast-bench fast-path-misses
 
-.PHONY: help test test-print test-read test-long bench \
+.PHONY: help test test-print test-read test-long bench test-int bench-int \
         $(PRINT_TESTS) $(READ_TESTS) $(LONG_TESTS) $(BENCHMARKS) \
-        supplemental third-party
+        $(INT_TESTS) $(INT_BENCH) supplemental third-party
 
 help:
 	@echo "make test          quick tests: test-print and test-read"
@@ -39,6 +45,8 @@ help:
 	@echo "make supplemental  Nigel Tao's test data (UPSTREAM and PARSE_FLOAT)"
 	@echo "make third-party   parse-float against Quicklisp libraries"
 	@echo "make bench         all benchmarks, before and after"
+	@echo "make test-int      integer tests (READ_FAST and INT_PRINT)"
+	@echo "make bench-int     integer benchmarks, before and after"
 	@echo "make <name>        one test or benchmark, e.g. make fixed"
 
 test: test-print test-read
@@ -46,6 +54,8 @@ test-print: $(PRINT_TESTS)
 test-read: $(READ_TESTS)
 test-long: $(LONG_TESTS)
 bench: $(BENCHMARKS)
+test-int: $(INT_TESTS)
+bench-int: $(INT_BENCH)
 
 # Printing tests, on ZMIJ. Tests comparing against SBCL's original code
 # read it from the source tree of the build (ORIGINAL_REV picks the
@@ -95,3 +105,21 @@ real-data:
 	$(UPSTREAM)/$(RUN) benchmarks/real-data.lisp
 	$(ZMIJ)/$(RUN) benchmarks/real-data.lisp
 	$(PARSE_FLOAT)/$(RUN) benchmarks/real-data.lisp
+
+# Integers (integers.md). read-fast and fast-path-misses compare the
+# READ-TOKEN fast path with the normal reader in the same build.
+read-fast: ; $(READ_FAST)/$(RUN) tests/read-fast.lisp
+int-print: ; $(INT_PRINT)/$(RUN) tests/int-print.lisp
+profile-reader:
+	$(UPSTREAM)/$(RUN) benchmarks/profile-reader.lisp
+	$(READ_FAST)/$(RUN) benchmarks/profile-reader.lisp
+profile-printer:
+	$(ZMIJ)/$(RUN) benchmarks/profile-printer.lisp
+	$(INT_PRINT)/$(RUN) benchmarks/profile-printer.lisp
+# Float reading with the fast path, against Eisel-Lemire alone.
+read-fast-bench:
+	$(PARSE_FLOAT)/$(RUN) benchmarks/read-bench.lisp
+	$(READ_FAST)/$(RUN) benchmarks/read-bench.lisp
+	$(PARSE_FLOAT)/$(RUN) benchmarks/real-data.lisp
+	$(READ_FAST)/$(RUN) benchmarks/real-data.lisp
+fast-path-misses: ; $(READ_FAST)/$(RUN) benchmarks/fast-path-misses.lisp

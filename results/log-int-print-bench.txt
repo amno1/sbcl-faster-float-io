@@ -1,0 +1,84 @@
+== ZM round 1
+Part 1: ns per call, best of 7
+  prin1-to-string, 18 digits                     135.0
+  prin1 to a null stream, 18 digits              115.0
+  (format nil "~D"), 18 digits                   120.0
+  %output-integer-in-base, 18 digits              50.0
+  prin1-to-string, 1-5 digits                     40.0
+  prin1 to a null stream, 1-5 digits              25.0
+  (format nil "~D"), 1-5 digits                   40.0
+  %output-integer-in-base, 1-5 digits             10.0
+  prin1-to-string, 25 digits (bignum)             65.0
+  prin1 to a null stream, 25 digits (bignum)      45.0
+  (format nil "~D"), 25 digits (bignum)           85.0
+  %output-integer-in-base, 25 digits (bignum)     35.0
+== IP round 1
+Part 1: ns per call, best of 7
+  prin1-to-string, 18 digits                      65.0
+  prin1 to a null stream, 18 digits               50.0
+  (format nil "~D"), 18 digits                    75.0
+  %output-integer-in-base, 18 digits              20.0
+  prin1-to-string, 1-5 digits                     40.0
+  prin1 to a null stream, 1-5 digits              25.0
+  (format nil "~D"), 1-5 digits                   60.0
+  %output-integer-in-base, 1-5 digits             15.0
+  prin1-to-string, 25 digits (bignum)             90.0
+  prin1 to a null stream, 25 digits (bignum)      70.0
+  (format nil "~D"), 25 digits (bignum)          120.0
+  %output-integer-in-base, 25 digits (bignum)     50.0
+== ZM round 2
+Part 1: ns per call, best of 7
+  prin1-to-string, 18 digits                      65.0
+  prin1 to a null stream, 18 digits               50.0
+  (format nil "~D"), 18 digits                    80.0
+  %output-integer-in-base, 18 digits              35.0
+  prin1-to-string, 1-5 digits                     30.0
+  prin1 to a null stream, 1-5 digits              20.0
+  (format nil "~D"), 1-5 digits                   40.0
+  %output-integer-in-base, 1-5 digits             10.0
+  prin1-to-string, 25 digits (bignum)             65.0
+  prin1 to a null stream, 25 digits (bignum)      45.0
+  (format nil "~D"), 25 digits (bignum)           85.0
+  %output-integer-in-base, 25 digits (bignum)     40.0
+== IP round 2
+Part 1: ns per call, best of 7
+  prin1-to-string, 18 digits                      55.0
+  prin1 to a null stream, 18 digits               35.0
+  (format nil "~D"), 18 digits                    50.0
+  %output-integer-in-base, 18 digits              15.0
+  prin1-to-string, 1-5 digits                     30.0
+  prin1 to a null stream, 1-5 digits              20.0
+  (format nil "~D"), 1-5 digits                   40.0
+  %output-integer-in-base, 1-5 digits             10.0
+  prin1-to-string, 25 digits (bignum)             60.0
+  prin1 to a null stream, 25 digits (bignum)      45.0
+  (format nil "~D"), 25 digits (bignum)           85.0
+  %output-integer-in-base, 25 digits (bignum)     35.0
+== ZM round 3
+Part 1: ns per call, best of 7
+  prin1-to-string, 18 digits                     135.0
+  prin1 to a null stream, 18 digits              110.0
+  (format nil "~D"), 18 digits                   125.0
+  %output-integer-in-base, 18 digits              55.0
+  prin1-to-string, 1-5 digits                     45.0
+  prin1 to a null stream, 1-5 digits              30.0
+  (format nil "~D"), 1-5 digits                   60.0
+  %output-integer-in-base, 1-5 digits             15.0
+  prin1-to-string, 25 digits (bignum)             95.0
+  prin1 to a null stream, 25 digits (bignum)      70.0
+  (format nil "~D"), 25 digits (bignum)          125.0
+  %output-integer-in-base, 25 digits (bignum)     55.0
+== IP round 3
+Part 1: ns per call, best of 7
+  prin1-to-string, 18 digits                      45.0
+  prin1 to a null stream, 18 digits               25.0
+  (format nil "~D"), 18 digits                    50.0
+  %output-integer-in-base, 18 digits              15.0
+  prin1-to-string, 1-5 digits                     30.0
+  prin1 to a null stream, 1-5 digits              15.0
+  (format nil "~D"), 1-5 digits                   45.0
+  %output-integer-in-base, 1-5 digits             10.0
+  prin1-to-string, 25 digits (bignum)             60.0
+  prin1 to a null stream, 25 digits (bignum)      45.0
+  (format nil "~D"), 25 digits (bignum)           85.0
+  %output-integer-in-base, 25 digits (bignum)     35.0

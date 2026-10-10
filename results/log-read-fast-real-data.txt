@@ -1,0 +1,63 @@
+First run:
+== PF
+SBCL 2.6.7.33.sbcl-parse-float.737-ae1a8d45f, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       192           51      275
+canada                      111,126 double       191           52      244
+gaia                      1,000,000 double       180           56      281
+hellfloat64               1,000,000 double       204           75    2,009
+marine_ik                   114,950 single       104           23      118
+mesh                         73,019 double       106           26      145
+mobilenetv3_large         1,000,000 single       131           40      169
+noaa_gfs_1p00             1,000,000 double       120           32      321
+noaa_global_hourly_2023   1,000,000 double       101           21       91
+numbers                      10,001 double       143           39      210
+OK: 0 failures
+== RF
+SBCL 2.6.7.33.sbcl-read-fast.737-ae1a8d45f-WIP, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double        80           36      188
+canada                      111,126 double        94           53      248
+gaia                      1,000,000 double       101           57      279
+hellfloat64               1,000,000 double       112           73    1,980
+marine_ik                   114,950 single        70           25      118
+mesh                         73,019 double        69           27      145
+mobilenetv3_large         1,000,000 single        83           40      174
+noaa_gfs_1p00             1,000,000 double        75           33      328
+noaa_global_hourly_2023   1,000,000 double        74           22       92
+numbers                      10,001 double        86           39      211
+OK: 0 failures
+
+Second run (the table takes the better time per file):
+== RF
+SBCL 2.6.7.33.sbcl-read-fast.737-ae1a8d45f-WIP, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double        79           36      185
+canada                      111,126 double        93           53      247
+gaia                      1,000,000 double       101           57      279
+hellfloat64               1,000,000 double       110           72    1,973
+marine_ik                   114,950 single        70           24      118
+mesh                         73,019 double        71           27      145
+mobilenetv3_large         1,000,000 single        84           40      171
+noaa_gfs_1p00             1,000,000 double        77           32      330
+noaa_global_hourly_2023   1,000,000 double        76           22       94
+numbers                      10,001 double        85           39      211
+OK: 0 failures
+== PF
+SBCL 2.6.7.33.sbcl-parse-float.737-ae1a8d45f, best of 9, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       132           35      187
+canada                      111,126 double       171           54      244
+gaia                      1,000,000 double       181           59      281
+hellfloat64               1,000,000 double       205           71    2,014
+marine_ik                   114,950 single       104           24      117
+mesh                         73,019 double       107           26      145
+mobilenetv3_large         1,000,000 single       130           39      174
+noaa_gfs_1p00             1,000,000 double       119           32      320
+noaa_global_hourly_2023   1,000,000 double       101           21       91
+numbers                      10,001 double       142           39      212
+OK: 0 failures

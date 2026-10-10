@@ -1,0 +1,11 @@
+SBCL 2.6.7.33.sbcl-read-fast.737-ae1a8d45f-WIP, best of 9, ns per READ-FROM-STRING
+
+token                              fast off    fast on difference
+symbol, letter first (foo123)          170.       160.        -10
+symbol, 1 digit first (1abc)            90.        90.         +0
+symbol, 18 digits first                500.       530.        +30
+ratio (123456/789)                     140.       150.        +10
+integer, 25 digits (bignum)            220.       270.        +50
+float, 25 significant digits          1380.      1460.        +80
+hit: integer, 18 digits                170.        60.       -110
+hit: float, 1.5                         70.        40.        -30

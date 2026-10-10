@@ -1,7 +1,8 @@
-# Faster float printing and reading in SBCL: tests and benchmarks
+# Faster number printing and reading in SBCL: tests and benchmarks
 
-Tests and benchmarks written while making SBCL print and read floats
-faster.
+Tests and benchmarks written while making SBCL print and read floats, and then
+integers, faster. The integer files are described at the end, under
+"Integers".
 
 ## Running the files
 
@@ -53,6 +54,8 @@ make UPSTREAM=~/src/sbcl ZMIJ=~/src/sbcl-zmij PARSE_FLOAT=~/src/sbcl-parse-float
 | `make supplemental` | Nigel Tao's test data, on `UPSTREAM` and `PARSE_FLOAT`  |
 | `make third-party`  | `sb-ext:parse-float` against Quicklisp libraries        |
 | `make bench`        | every benchmark, before and after                       |
+| `make test-int`     | the integer tests, on `READ_FAST` and `INT_PRINT`       |
+| `make bench-int`    | the integer benchmarks, before and after                |
 | `make <name>`       | one file, named as below without `.lisp`: `make fixed`  |
 
 All variables are optional; the defaults are the paths on my machine.  Variables
@@ -64,16 +67,20 @@ for the scripts are given the same way, e.g.  `make THREADS=16 test-long`:
 | `ZMIJ`         | `~/repos/sbcl-zmij`         | branch `sbcl-zmij`                                              |
 | `PARSE_FLOAT`  | `~/repos/sbcl-parse-float`  | branch `sbcl-parse-float`                                       |
 | `BOTH`         | `~/repos/sb-simd-512`       | a build with both parts                                         |
+| `READ_FAST`    | `~/repos/sbcl-read-fast`    | branch `sbcl-read-fast`                                         |
+| `INT_PRINT`    | `~/repos/sbcl-int-print`    | branch `sbcl-int-print`                                         |
 | `THREADS`      | 8                           | threads for the threaded tests                                  |
 | `RUNS`         | 5 or 7                      | passes per benchmark; the best is reported                      |
 | `LIMIT`        | 1,000,000                   | lines per file in `real-data.lisp`                              |
 | `DOUBLES`      | 0                           | random doubles in `single-roundtrip.lisp`                       |
 | `ORIGINAL_REV` | `c7621755f`                 | the original SBCL for `flonum-to-string`, `exponential`, `general` |
 
-[`tests/common.lisp`](tests/common.lisp) is not a test: it holds two helpers
-the tests share, `fail`, which counts a failure and prints it unless 50 have
-been printed already, and `map-combinations`, which tries every combination of
-a function's argument values.
+[`tests/common.lisp`](tests/common.lisp) is not a test: it holds the helpers
+the tests share: `fail`, which counts a failure and prints it unless 50 have
+been printed already; `map-combinations`, which calls a function with every
+combination of argument values; `do-combinations`, which runs a body for every
+combination of variable values, in place of nested `dolist`s; and `range`, the
+integers between two bounds.
 
 Tests that compare against SBCL's original code read it from the source tree of
 the build that runs them, so no paths have to be set for that. Each file can
@@ -258,13 +265,13 @@ make transform
 
 #### [`parse-float.lisp`](tests/parse-float.lisp)
 
-Checks the Eisel-Lemire fast path of the reader (`make-float/fast`):
-every string is read with the fast path and again with it switched
-off, and the results must be identical (the same float bit for bit, or
-the same kind of error). Covers printed doubles and singles, random
-decimals (1-25 digits, exponents up to ±400, every marker and sign),
-exact halfway cases near 2^53 and 2^24, and overflow, underflow and
-subnormal boundaries, under both default float formats.
+Checks the Eisel-Lemire fast path of the reader (`make-float/fast`): every
+string is read with the fast path and again with it switched off, and the
+results must be identical (the same float bit for bit, or the same kind of
+error). Covers printed doubles and singles, random decimals (1-25 digits,
+exponents up to ±400, every marker and sign), exact halfway cases near 2^53 and
+2^24, and overflow, underflow and subnormal boundaries, under both default float
+formats.
 
 Result: 10,006,588 strings (9,151,424 through the fast path) (printed floats,
 random decimals, halfway cases, boundaries); identical results with the fast
@@ -470,4 +477,100 @@ upstream and on both branches. Output:
 
 ```sh
 make real-data
+```
+
+## Integers
+
+The files for [`integers.md`](integers.md), run on 2026-10-10 on two more
+branches, built on the same upstream commit:
+[`sbcl-read-fast`](https://github.com/amno1/sbcl/tree/sbcl-read-fast), on top of
+`sbcl-parse-float`, for reading, and
+[`sbcl-int-print`](https://github.com/amno1/sbcl/tree/sbcl-int-print), on top of
+`sbcl-zmij`, for printing. SBCL's own test suite passes on both. The output of
+the tests is in [`log-int-tests.txt`](results/log-int-tests.txt), with the
+float tests that were run again on `sbcl-read-fast`.
+
+#### [`read-fast.lisp`](tests/read-fast.lisp)
+
+Checks the fast path in `read-token` (`read-number/fast`): every string is read
+with the fast path and again with it switched off, and the results must be
+identical: the same objects (`eql`, so the same type and bits), the same stream
+position after each read, or the same kind of error. Covers random integers and
+floats and their edge cases, tokens the fast path must leave alone (symbols,
+ratios, escapes, package prefixes, `#x1F`, `1r5`), several objects in one
+string, `read-preserving-whitespace`, both default float formats, `*read-base*`
+16, `*read-suppress*`, and a readtable in which a digit is whitespace.
+
+Result: 880,830 strings; identical results with the fast path on and off.
+
+```sh
+make read-fast
+```
+
+#### [`int-print.lisp`](tests/int-print.lisp)
+
+Checks base-10 integer printing against a plain divide-by-10 reference: powers
+of ten up to 10^80 and their neighbours, the fixnum and word limits, random
+words of every length, bignums whose 19-digit chunks are zero or start with
+zeros, and random bignums of up to 2,048 bits, all with both signs. Each is
+printed eight ways: `prin1-to-string`, `princ-to-string`, `prin1` to a stream,
+`~D`, `~:D`, `~10D`, `~@D` and with `*print-radix*`.
+
+Result: 3,365,968 checks, 0 failures.
+
+```sh
+make int-print
+```
+
+#### [`profile-reader.lisp`](benchmarks/profile-reader.lisp)
+
+`read-from-string` of integers of 18 and 1-5 digits, of the same digits as a
+symbol (a letter in front, so no number is built), and `parse-integer` of the
+same digits; then an `sb-sprof` profile of reading 18-digit integers. On
+upstream it shows where the reader spends its time
+([`log-profile-reader.txt`](results/log-profile-reader.txt)); on both builds,
+alternately, it gives the integer table in `integers.md`
+([`log-int-read-bench.txt`](results/log-int-read-bench.txt)).
+
+```sh
+make profile-reader
+```
+
+#### [`profile-printer.lisp`](benchmarks/profile-printer.lisp)
+
+Printing integers of 18 and 1-5 digits and 25-digit bignums with
+`prin1-to-string`, `prin1` to a discarding stream, `(format nil "~D")` and the
+digit loop alone; then an `sb-sprof` profile of `prin1-to-string`. On upstream
+it shows where the printer spends its time
+([`log-profile-printer.txt`](results/log-profile-printer.txt)); on `sbcl-zmij`
+and `sbcl-int-print`, alternately, it gives the printing table
+([`log-int-print-bench.txt`](results/log-int-print-bench.txt)).
+
+```sh
+make profile-printer
+```
+
+#### `read-fast-bench`
+
+Not a file: [`read-bench.lisp`](benchmarks/read-bench.lisp) and
+[`real-data.lisp`](benchmarks/real-data.lisp) run on `sbcl-parse-float` and on
+`sbcl-read-fast`, which shows what the fast path adds to Eisel-Lemire. Output:
+[`log-read-fast-floats.txt`](results/log-read-fast-floats.txt) and
+[`log-read-fast-real-data.txt`](results/log-read-fast-real-data.txt), which has
+two runs; the table takes the better time per file.
+
+```sh
+make read-fast-bench
+```
+
+#### [`fast-path-misses.lisp`](benchmarks/fast-path-misses.lisp)
+
+What the fast path costs when it gives up: symbols that start with digits,
+ratios, integers and floats too long for it, read with `read-from-string` with
+the fast path on and off, alternately in one process, best of `RUNS` (default
+9). Two tokens it handles are included for comparison. Output:
+[`log-fast-path-misses.txt`](results/log-fast-path-misses.txt).
+
+```sh
+make fast-path-misses
 ```

@@ -23,6 +23,21 @@
                    (walk (rest lists) (append chosen (list value)))))))
     (walk value-lists '())))
 
+;;; Run BODY once for every combination of values: BINDINGS is a list of
+;;; (VARIABLE LIST), and each VARIABLE is bound in turn to the elements of
+;;; its LIST, the first varying slowest, as in nested DOLISTs. A LIST may
+;;; use the variables bound before it.
+(defmacro do-combinations (bindings &body body)
+  (if (endp bindings)
+      `(progn ,@body)
+      (destructuring-bind ((variable list) &rest more) bindings
+        `(dolist (,variable ,list)
+           (do-combinations ,more ,@body)))))
+
+;;; The integers from FROM to TO, inclusive.
+(defun range (from to)
+  (loop for i from from to to collect i))
+
 ;;; The text of FILE, a path such as "src/code/print.lisp", as it was in the
 ;;; original SBCL: commit ORIGINAL_REV (default c7621755f, from before any
 ;;; zmij work), read with git from the source tree of the SBCL running the

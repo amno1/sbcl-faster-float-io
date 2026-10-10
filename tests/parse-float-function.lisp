@@ -107,54 +107,73 @@
         mantissa
         (format nil "~A~C~D" mantissa marker (- (random 801 state) 400)))))
 
+(defun check-against-both (string)
+  (check-against-reader string)
+  (check-against-exact string))
+
+;;; Float strings checked against the reader and the exact value.
+(defparameter *float-strings*
+  '("0.0" "-0.0" "+0.0" "0.0d0" "-0.0d0" "0e0" "-0e5" ".5" "-.5" "1e5"
+    "1d5" "1f5" "1s5" "1l5" "1.7976931348623157d308"
+    "4.9406564584124654d-324" "2.2250738585072011d-308"
+    "3.4028235e38" "1.4e-45" "9007199254740993.0" "9007199254740993d0"
+    "16777217f0" "0.1" "123.456" "1d23" "1234567890123456789.0"
+    "12345678901234567890.0" "1.2345678901234567890123d0"
+    "0.00000000000000000001234567890123456789"))
+
+;;; Integer strings: PARSE-FLOAT reads them as floats, correctly rounded.
+(defparameter *integer-strings*
+  '("0" "-0" "12" "12." "-12." "+7" "9007199254740993" "16777217"
+    "123456789012345678901234567890" "00012"))
+
+;;; A random double and single (any bit pattern with the sign bit set) and
+;;; their absolute values, printed; NaNs and infinities are left out.
+(defun random-printed-floats (state)
+  (let ((x (sb-kernel:make-double-float (- (random (ash 1 31) state))
+                                        (random (ash 1 32) state)))
+        (f (sb-kernel:make-single-float (- (random (ash 1 31) state)))))
+    (loop for y in (list x f (abs x) (abs f))
+          unless (or (sb-ext:float-nan-p y) (sb-ext:float-infinity-p y))
+            collect (prin1-to-string y))))
+
+;;; Halfway cases near 2^53 and 2^24, the K-th above each.
+(defun halfway-strings (k)
+  (let ((m (+ (expt 2 53) 1 (* 2 k)))
+        (f (+ (expt 2 24) 1 (* 2 k))))
+    (list (format nil "~D.0" m) (format nil "~Dd0" m)
+          (format nil "~D.5d0" (floor m 2)) (format nil "~D.0" f)
+          (format nil "~Df0" f))))
+
+;;; Checks 1 and 2, values, under the current *READ-DEFAULT-FLOAT-FORMAT*.
+(defun check-values (state count)
+  (dolist (s *float-strings*)
+    (check-against-both s))
+  (dolist (s *integer-strings*)
+    (check-against-exact s))
+  (dotimes (i count)
+    (check-against-both (random-decimal state))
+    (dolist (s (random-printed-floats state))
+      (check-against-reader s)))
+  (do-combinations ((k (range 0 1999))
+                    (s (halfway-strings k)))
+    (check-against-both s)))
+
 (let ((count (if (second sb-ext:*posix-argv*)
                  (parse-integer (second sb-ext:*posix-argv*))
                  100000))
       (state (sb-ext:seed-random-state 43)))
   ;; 1 and 2: values.
   (dolist (*read-default-float-format* '(single-float double-float))
-    (dolist (s '("0.0" "-0.0" "+0.0" "0.0d0" "-0.0d0" "0e0" "-0e5" ".5" "-.5" "1e5"
-                 "1d5" "1f5" "1s5" "1l5" "1.7976931348623157d308"
-                 "4.9406564584124654d-324" "2.2250738585072011d-308"
-                 "3.4028235e38" "1.4e-45" "9007199254740993.0" "9007199254740993d0"
-                 "16777217f0" "0.1" "123.456" "1d23" "1234567890123456789.0"
-                 "12345678901234567890.0" "1.2345678901234567890123d0"
-                 "0.00000000000000000001234567890123456789"))
-      (check-against-reader s)
-      (check-against-exact s))
-    ;; Integer strings: floats, correctly rounded.
-    (dolist (s '("0" "-0" "12" "12." "-12." "+7" "9007199254740993" "16777217"
-                 "123456789012345678901234567890" "00012"))
-      (check-against-exact s))
-    (dotimes (i count)
-      (let ((s (random-decimal state)))
-        (check-against-reader s)
-        (check-against-exact s))
-      (let ((x (sb-kernel:make-double-float (- (random (ash 1 31) state))
-                                            (random (ash 1 32) state)))
-            (f (sb-kernel:make-single-float (- (random (ash 1 31) state)))))
-        (dolist (x (list x f (abs x) (abs f)))
-          (unless (or (sb-ext:float-nan-p x) (sb-ext:float-infinity-p x))
-            (check-against-reader (prin1-to-string x))))))
-    ;; Halfway cases near 2^53 and 2^24.
-    (loop for k below 2000
-          for m = (+ (expt 2 53) 1 (* 2 k))
-          for f = (+ (expt 2 24) 1 (* 2 k))
-          do
-          (dolist (s (list (format nil "~D.0" m) (format nil "~Dd0" m)
-                           (format nil "~D.5d0" (floor m 2)) (format nil "~D.0" f)
-                           (format nil "~Df0" f)))
-               (check-against-reader s)
-               (check-against-exact s))))
+    (check-values state count))
   ;; 3: interface, on strings that are integers for PARSE-INTEGER too.
   (dolist (s '("12" " 12" "12 " "  12  " "+12" "-12" "1 2" "12x" "x12" "" "   "
                "-" "+" "- 12" "12-" (format nil "~C12~C" #\Tab #\Newline)))
     (check-like-parse-integer s)
     (check-like-parse-integer s :junk-allowed t))
-  (dolist (args '((:start 1) (:end 3) (:start 2 :end 4) (:start 0 :end 0)
-                  (:start 1 :junk-allowed t) (:end 2 :junk-allowed t)))
-    (dolist (s '("  123  " "x123y" "123" " 1 2 3 "))
-      (apply #'check-like-parse-integer s args)))
+  (do-combinations ((args '((:start 1) (:end 3) (:start 2 :end 4) (:start 0 :end 0)
+                            (:start 1 :junk-allowed t) (:end 2 :junk-allowed t)))
+                    (s '("  123  " "x123y" "123" " 1 2 3 ")))
+    (apply #'check-like-parse-integer s args))
   ;; Non-simple strings.
   (let ((fill (make-array 10 :element-type 'character :fill-pointer 5
                              :initial-contents "  42 junk ")))

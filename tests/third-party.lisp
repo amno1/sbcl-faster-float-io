@@ -47,7 +47,9 @@
   (loop for bits = (random (ash 1 32) state)
         unless (= (ldb (byte 8 23) bits) #xFF)
           do (return (sb-kernel:make-single-float
-                      (if (logbitp 31 bits) (- bits (ash 1 32)) bits)))))
+                      (if (logbitp 31 bits)
+                          (- bits (ash 1 32))
+                          bits)))))
 
 (defparameter *parsers*
   (list (cons "sb-ext:parse-float" (lambda (s) (sb-ext:parse-float s)))
@@ -79,6 +81,41 @@
     (incf *own-failures* (aref failures 0))
     (coerce failures 'list)))
 
+;;; String generators for the speed test.
+(defun short-decimal (state)
+  (format nil "~D.~D" (random 100 state) (random 100 state)))
+
+;;; A double with 17 significant digits in [1, 1000).
+(defun digits17 (state)
+  (let ((*read-default-float-format* 'double-float))
+    (format nil "~,14F" (+ 1 (random 999d0 state)))))
+
+(defun digits17-exp (state)
+  (format nil "~D.~16,'0De~D" (1+ (random 9 state))
+          (random (expt 10 16) state) (- (random 601 state) 300)))
+
+(defun printed-single (state)
+  (let ((*read-default-float-format* 'single-float))
+    (prin1-to-string (abs (random-single state)))))
+
+;;; The speed test's cases: name, *READ-DEFAULT-FLOAT-FORMAT*, generator.
+(defparameter *speed-cases*
+  `(("short (1.5, 12.25)" double-float ,#'short-decimal)
+    ("17 digits, ordinary" double-float ,#'digits17)
+    ("17 digits, exponent to +-300" double-float ,#'digits17-exp)
+    ("single-floats" single-float ,#'printed-single)))
+
+;;; ns per string of V for every parser in *PARSERS* and for
+;;; READ-FROM-STRING. Errors are caught for every parser alike, so a
+;;; library that fails on some strings still gets timed; the round trip
+;;; counts its failures.
+(defun parser-times (v)
+  (loop for parse in (append (mapcar #'cdr *parsers*) (list #'read-from-string))
+        collect (round (bench (lambda (s)
+                                (handler-case (funcall parse s)
+                                  (error () nil)))
+                              v))))
+
 (let* ((args (rest sb-ext:*posix-argv*))
        (n (if (first args) (parse-integer (first args)) 1000000))
        (state (sb-ext:seed-random-state 7)))
@@ -94,38 +131,12 @@
   (format t "~%Speed, ns per string, best of ~D~%" *runs*)
   (format t "~32A~{ ~20@A~}~%" ""
           (append (mapcar #'car *parsers*) '("read-from-string")))
-  (flet ((digits17 (s)
-           ;; A double with 17 significant digits in [1, 1000).
-           (let ((*read-default-float-format* 'double-float))
-             (format nil "~,14F" (+ 1 (random 999d0 s)))))
-         (digits17-exp (s)
-           (format nil "~D.~16,'0De~D" (1+ (random 9 s))
-                   (random (expt 10 16) s) (- (random 601 s) 300))))
-    (loop for (name format make)
-            in `(("short (1.5, 12.25)" double-float
-                  ,(lambda (s) (format nil "~D.~D" (random 100 s) (random 100 s))))
-                 ("17 digits, ordinary" double-float ,#'digits17)
-                 ("17 digits, exponent to +-300" double-float ,#'digits17-exp)
-                 ("single-floats" single-float
-                  ,(lambda (s)
-                     (let ((*read-default-float-format* 'single-float))
-                       (prin1-to-string (abs (random-single s)))))))
-          do (let ((*read-default-float-format* format)
-                   (v (coerce (loop repeat 100000 collect (funcall make state))
-                              'simple-vector)))
-               (format t "~32A~{ ~20:D~}~%" name
-                       ;; Errors are caught for every parser alike, so a
-                       ;; library that fails on some strings still gets
-                       ;; timed; the round trip above counts its failures.
-                       (loop for parse
-                               in (append (mapcar #'cdr *parsers*)
-                                          (list #'read-from-string))
-                             collect (let ((parse parse))
-                                       (round (bench (lambda (s)
-                                                (handler-case (funcall parse s)
-                                                  (error () nil)))
-                                              v)))))
-               (finish-output))))
+  (loop for (name format make) in *speed-cases*
+        do (let ((*read-default-float-format* format)
+                 (v (coerce (loop repeat 100000 collect (funcall make state))
+                            'simple-vector)))
+             (format t "~32A~{ ~20:D~}~%" name (parser-times v))
+             (finish-output)))
   (format t "~%~:[OK~;FAILED~]: sb-ext:parse-float, ~D failure~:P~%"
           (plusp *own-failures*) *own-failures*)
   (sb-ext:exit :code (if (plusp *own-failures*) 1 0)))

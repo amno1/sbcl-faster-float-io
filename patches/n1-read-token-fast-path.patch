@@ -1,0 +1,179 @@
+From c751d63bc6c3dcb1547155ab712878c314792dae Mon Sep 17 00:00:00 2001
+From: arthur <arthur.miller@live.com>
+Date: Sat, 10 Oct 2026 00:43:08 +0200
+Subject: [PATCH 1/2] Fast path in READ-TOKEN for numbers read from a string
+
+When READ-TOKEN reads from a string input stream with *READ-BASE* 10,
+READ-NUMBER/FAST first looks for a decimal integer or float token directly in
+the stream's string, without a stream call or the token buffer per character. It
+returns integers of up to 18 significant digits and converts floats with
+DECIMAL-TO-FLOAT (Eisel-Lemire). Every character must be a constituent
+in *READTABLE* and the token must end at a delimiter, so readtable and base
+changes behave as before; anything else is left to READ-TOKEN with nothing
+consumed. READ-FROM-STRING of an 18-digit integer is about twice as fast, floats
+1.3-1.7x.
+---
+ src/code/reader.lisp | 140 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 140 insertions(+)
+
+diff --git a/src/code/reader.lisp b/src/code/reader.lisp
+index 0ba06fc49..52ad4ce7d 100644
+--- a/src/code/reader.lisp
++++ b/src/code/reader.lisp
+@@ -1240,6 +1240,11 @@ extended <package-name>::<form-in-package> syntax."
+   (when *read-suppress*
+     (internal-read-extended-token stream firstchar nil)
+     (return-from read-token nil))
++  #+64-bit
++  (when (and (eql *read-base* 10) (typep stream 'string-input-stream))
++    (multiple-value-bind (number found) (read-number/fast stream firstchar)
++      (when found
++        (return-from read-token number))))
+   (let* ((rt *readtable*)
+          (base *read-base*)
+          (attribute-array (base-char-syntax-array rt))
+@@ -1935,6 +1940,141 @@ extended <package-name>::<form-in-package> syntax."
+         (let ((value (or (decimal-to-float w q double)
+                          (return-from make-float/fast nil))))
+           (if negative (- value) value))))))
++
++;;; The fast path of READ-TOKEN for a string input STREAM: if FIRSTCHAR
++;;; and the characters after it in STREAM's string form a decimal integer
++;;; or float token that ends at the end of the string or at a delimiter,
++;;; consume the token (but not the delimiter, as READ-TOKEN unreads it)
++;;; and return (VALUES NUMBER T). Otherwise return NIL and consume
++;;; nothing, so that READ-TOKEN reads the token as before. The token is
++;;; scanned in the string itself, with no stream call per character and
++;;; no token buffer.
++;;;
++;;; Every character must have constituent syntax in *READTABLE* (the
++;;; digits, signs, point and exponent markers all have fixed constituent
++;;; traits) and the token must end at a delimiter of *READTABLE*; the
++;;; caller checks that *READ-BASE* is 10. So a changed readtable or base
++;;; changes the outcome exactly as it would for READ-TOKEN. Handled, as in
++;;; READ-TOKEN: [sign] digits+ [.] (an integer of at most 18 significant
++;;; digits), and [sign] digits* [. digits*] [marker [sign] digits+] with at
++;;; least one digit, a fraction or an exponent (a float, through
++;;; DECIMAL-TO-FLOAT). Anything else, including longer integers, more
++;;; than 19 significant digits and results the fast conversion does not
++;;; handle, is left to READ-TOKEN.
++(defun read-number/fast (stream firstchar)
++  (declare (type string-input-stream stream)
++           (type character firstchar))
++  (let* ((rt *readtable*)
++         (attribute-array (base-char-syntax-array rt))
++         #+sb-unicode (attribute-hash-table (extended-char-table rt))
++         (string (string-input-stream-string stream))
++         (start (string-input-stream-index stream))
++         (limit (string-input-stream-limit stream)))
++    (declare (type index start limit))
++    (macrolet ((give-up () '(return-from read-number/fast nil)))
++      (string-dispatch ((simple-array character (*)) simple-base-string) string
++        (let ((pos (1- start))    ; index of the current character; FIRSTCHAR
++                                  ; is at START - 1 in the string
++              (w 0)               ; significant digits, at most 19
++              (significant 0)
++              (int-digits 0)
++              (fraction-digits 0)
++              (negative nil)
++              (marker nil)
++              (exponent 0)
++              (exponent-negative nil))
++          (declare (type fixnum pos)
++                   (type (unsigned-byte 64) w)
++                   (type (integer 0 19) significant)
++                   (type (and fixnum unsigned-byte) int-digits fraction-digits exponent))
++          (labels ((code-at (i)
++                     ;; The char code at I, or -1 at the end.
++                     (if (< i limit) (char-code (char string i)) -1))
++                   (constituent-code-p (code)
++                     ;; CODE is an ASCII character with constituent syntax.
++                     (and (< -1 code 128)
++                          (>= (aref attribute-array code) +char-attr-constituent+)))
++                   (digits (fraction)
++                     ;; Accumulate the digits from POS on; return their count.
++                     (let ((count 0))
++                       (declare (type (and fixnum unsigned-byte) count))
++                       (loop
++                         (let ((code (code-at pos)))
++                           (unless (and (<= 48 code 57) (constituent-code-p code))
++                             (return count))
++                           (let ((digit (- code 48)))
++                             (unless (and (zerop w) (zerop digit))
++                               (when (= significant 19) (give-up))
++                               (setq w (truly-the (integer 0 (#.(expt 10 19)))
++                                                  (+ (* w 10) digit)))
++                               (incf significant)))
++                           (when fraction (incf fraction-digits))
++                           (incf count)
++                           (incf pos)))))
++                   (sign-at-pos ()
++                     ;; If POS has a constituent + or -, skip it; return T for -.
++                     (let ((code (code-at pos)))
++                       (when (and (or (= code 43) (= code 45)) (constituent-code-p code))
++                         (incf pos)
++                         (= code 45)))))
++            ;; All inline, so that GIVE-UP inside them is a plain jump, not a
++            ;; non-local exit.
++            (declare (inline code-at constituent-code-p digits sign-at-pos))
++            ;; FIRSTCHAR was just read from the stream, so it is
++            ;; STRING[START - 1]; anything else is left to READ-TOKEN.
++            (unless (and (> start 0) (eql (char string (1- start)) firstchar))
++              (give-up))
++            (setq negative (sign-at-pos))
++            (setq int-digits (digits nil))
++            (let ((code (code-at pos)))
++              (when (and (= code 46) (constituent-code-p code))
++                (incf pos)
++                (digits t)))
++            (when (zerop (+ int-digits fraction-digits)) (give-up))
++            (let ((code (code-at pos)))
++              (when (and (< -1 code 128)
++                         (find (code-char code) "EeSsFfDdLl")
++                         (constituent-code-p code))
++                (setq marker (char-upcase (code-char code)))
++                (incf pos)
++                (setq exponent-negative (sign-at-pos))
++                (let ((exponent-start pos))
++                  (loop
++                    (let ((code (code-at pos)))
++                      (unless (and (<= 48 code 57) (constituent-code-p code))
++                        (return))
++                      (setq exponent (+ (* exponent 10) (- code 48)))
++                      (when (> exponent 100000) (give-up))
++                      (incf pos)))
++                  (when (= pos exponent-start) (give-up)))))
++            ;; The token must end at the end of the string or at a delimiter.
++            (when (< pos limit)
++              (let ((char (char string pos)))
++                (unless (<= (char-syntax char attribute-array attribute-hash-table)
++                            +char-attr-terminating-macro+)
++                  (give-up))))
++            (let ((value
++                    (cond
++                      ((and (not marker) (zerop fraction-digits))
++                       ;; Integer: digits and at most a trailing point.
++                       (when (> significant 18) (give-up))
++                       (if negative (- w) w))
++                      (t
++                       (let ((double (case (case marker
++                                             ((nil #\E) *read-default-float-format*)
++                                             ((#\S #\F) 'single-float)
++                                             ((#\D) 'double-float)
++                                             (t 'long-float))
++                                       ((double-float #-long-float long-float) t)
++                                       ((single-float short-float) nil)
++                                       (t (give-up))))
++                             (q (- (if exponent-negative (- exponent) exponent)
++                                   fraction-digits)))
++                         (let ((value (or (decimal-to-float w q double)
++                                          (give-up))))
++                           (if negative (- value) value)))))))
++              (setf (string-input-stream-index stream) pos)
++              (values value t))))))))
+ )
+ 
+ (defun make-float (stream)
+-- 
+2.56.0
+

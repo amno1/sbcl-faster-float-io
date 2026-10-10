@@ -1,0 +1,46 @@
+== test-read-fast (sbcl-read-fast)
+880,830 strings checked
+OK: 0 failures
+
+== parse-float (sbcl-read-fast)
+10,006,588 strings read, 0 through the fast path
+OK: 0 failures
+
+== supplemental (sbcl-read-fast)
+SBCL 2.6.7.33.sbcl-read-fast.737-ae1a8d45f-WIP; sb-ext:parse-float present
+freetype-2-7.txt                        8,376 checks, 0 failures
+google-double-conversion.txt        1,751,044 checks, 0 failures
+google-wuffs.txt                       25,772 checks, 0 failures
+ibm-fpgen.txt                         403,202 checks, 0 failures
+lemire-fast-double-parser.txt         374,394 checks, 0 failures
+lemire-fast-float.txt                   7,820 checks, 0 failures
+more-test-cases.txt                         8 checks, 0 failures
+remyoudompheng-fptest-0.txt         4,000,000 checks, 0 failures
+remyoudompheng-fptest-1.txt         4,000,000 checks, 0 failures
+remyoudompheng-fptest-2.txt         4,000,000 checks, 0 failures
+remyoudompheng-fptest-3.txt         3,542,832 checks, 0 failures
+tencent-rapidjson.txt                   9,266 checks, 0 failures
+ulfjack-ryu.txt                     1,837,294 checks, 0 failures
+19,960,008 checks
+OK: 0 failures
+
+== test-int-print (sbcl-int-print)
+3,365,968 checks
+OK: 0 failures
+
+== sbcl-test-suite: SBCL's test suite, summary
+/running tests on '/home/arthur/repos/sbcl-read-fast/tests/../src/runtime/sbcl --core /home/arthur/repos/sbcl-read-fast/tests/../output/sbcl.core --disable-ldb --noinform --no-sysinit --no-userinit --noprint --disable-debugger'
+Status:
+ (3 tests skipped for this combination of platform and features)
+ (3 tests skipped for features not implemented for this platform)
+ok
+//apparent success (reached end of run-tests.sh normally)
+
+== sbcl-test-suite-int-print: SBCL's test suite, summary
+/running tests on '/home/arthur/repos/sbcl-int-print/tests/../src/runtime/sbcl --core /home/arthur/repos/sbcl-int-print/tests/../output/sbcl.core --disable-ldb --noinform --no-sysinit --no-userinit --noprint --disable-debugger'
+Status:
+ (3 tests skipped for this combination of platform and features)
+ (3 tests skipped for features not implemented for this platform)
+ok
+//apparent success (reached end of run-tests.sh normally)
+

@@ -1,0 +1,69 @@
+SBCL 2.6.7.33.HEAD.728-c2aca591d
+
+Part 1: ns per call, best of 7
+  read-from-string, integer, 18 digits           195.0
+  read-from-string, symbol X + 18 digits         455.0
+  parse-integer, 18 digits                        40.0
+  read-from-string, integer, 1-5 digits           90.0
+  read-from-string, symbol X + 1-5 digits        270.0
+  parse-integer, 1-5 digits                       15.0
+
+Part 2: SB-SPROF, READ-FROM-STRING of 18-digit integers
+
+
+Number of samples:   1416
+Sample interval:     0.0002 seconds
+Total sampling time: 0.2832 seconds
+Graph cycles:        0
+Sampled threads:
+   #<THREAD tid=146751 "main thread" RUNNING {1201178003}> (54832/1048576 bytes, 221 hash buckets)
+
+           Self        Total        Cumul
+  Nr  Count     %  Count     %  Count     %    Calls  Function
+------------------------------------------------------------------------
+   1    609  43.0    880  62.1    609  43.0        -  SB-IMPL::READ-TOKEN
+   2    271  19.1    288  20.3    880  62.1        -  SB-IMPL::MAKE-INTEGER
+   3    261  18.4    261  18.4   1141  80.6        -  (FLET SB-IMPL::BASE-CHAR-IN :IN SB-IMPL::%INIT-STRING-INPUT-STREAM)
+   4     47   3.3   1329  93.9   1188  83.9        -  SB-IMPL::%READ-PRESERVING-WHITESPACE
+   5     25   1.8   1394  98.4   1213  85.7        -  SB-IMPL::%READ-FROM-STRING
+   6     25   1.8   1342  94.8   1238  87.4        -  READ
+   7     24   1.7     24   1.7   1262  89.1        -  SB-IMPL::%INIT-STRING-INPUT-STREAM
+   8     22   1.6     22   1.6   1284  90.7        -  (LAMBDA (STREAM SB-IMPL::START-POS &OPTIONAL SB-IMPL::RESULT &REST SB-IMPL::JUNK) :IN SB-IMPL::READ-OBJECT?)
+   9     21   1.5     21   1.5   1305  92.2        -  SB-IMPL::RELEASE-TOKEN-BUF
+  10     17   1.2     17   1.2   1322  93.4        -  SB-KERNEL::INTEXP
+  11     16   1.1   1181  83.4   1338  94.5        -  SB-IMPL::READ-OBJECT?
+  12     13   0.9     13   0.9   1351  95.4        -  SB-KERNEL:VECTOR-HAIRY-DATA-VECTOR-REF/CHECK-BOUNDS
+  13     13   0.9     13   0.9   1364  96.3        -  SB-IMPL::CHECK-FOR-RECURSIVE-READ
+  14     11   0.8     19   1.3   1375  97.1        -  SB-IMPL::RESET-READ-BUFFER
+  15      9   0.6      9   0.6   1384  97.7        -  (SB-VM::OPTIMIZED-DATA-VECTOR-REF T)
+  16      8   0.6      8   0.6   1392  98.3        -  SB-KERNEL:%SET-FILL-POINTER
+  17      7   0.5      7   0.5   1399  98.8        -  SB-IMPL::GET-CMT-ENTRY
+  18      7   0.5      7   0.5   1406  99.3        -  SB-IMPL::ACQUIRE-TOKEN-BUF
+  19      5   0.4      5   0.4   1411  99.6        -  TAIL-CALL-VARIABLE
+  20      4   0.3      4   0.3   1415  99.9        -  GENERIC-*
+  21      1   0.1   1416 100.0   1416 100.0        -  top level form
+  22      0   0.0   1416 100.0   1416 100.0        -  (FLET "G" :IN SB-C::%COMPILE-IN-LEXENV)
+  23      0   0.0   1416 100.0   1416 100.0        -  SB-C::%COMPILE-IN-LEXENV
+  24      0   0.0   1416 100.0   1416 100.0        -  SB-C:EVAL-WITH-COMPILE-IN-LEXENV
+  25      0   0.0   1416 100.0   1416 100.0        -  SB-IMPL::%SIMPLE-EVAL
+  26      0   0.0   1416 100.0   1416 100.0        -  SB-INT:SIMPLE-EVAL-IN-LEXENV
+  27      0   0.0   1416 100.0   1416 100.0        -  EVAL-TLF
+  28      0   0.0   1416 100.0   1416 100.0        -  (LABELS SB-FASL::EVAL-FORM :IN SB-INT:LOAD-AS-SOURCE)
+  29      0   0.0   1416 100.0   1416 100.0        -  (LAMBDA (SB-KERNEL:FORM &KEY :CURRENT-INDEX &ALLOW-OTHER-KEYS) :IN SB-INT:LOAD-AS-SOURCE)
+  30      0   0.0   1416 100.0   1416 100.0        -  SB-C::%DO-FORMS-FROM-INFO
+  31      0   0.0   1416 100.0   1416 100.0        -  SB-INT:LOAD-AS-SOURCE
+  32      0   0.0   1416 100.0   1416 100.0        -  (LABELS SB-FASL::LOAD-STREAM-1 :IN LOAD)
+  33      0   0.0   1416 100.0   1416 100.0        -  SB-FASL::CALL-WITH-LOAD-BINDINGS
+  34      0   0.0   1416 100.0   1416 100.0        -  (LABELS SB-FASL::LOAD-STREAM :IN LOAD)
+  35      0   0.0   1416 100.0   1416 100.0        -  LOAD
+  36      0   0.0   1416 100.0   1416 100.0        -  (FLET SB-IMPL::LOAD-SCRIPT :IN SB-IMPL::PROCESS-SCRIPT)
+  37      0   0.0   1416 100.0   1416 100.0        -  (FLET SB-UNIX::BODY :IN SB-IMPL::PROCESS-SCRIPT)
+  38      0   0.0   1416 100.0   1416 100.0        -  (FLET "WITHOUT-INTERRUPTS-BODY-" :IN SB-IMPL::PROCESS-SCRIPT)
+  39      0   0.0   1416 100.0   1416 100.0        -  SB-IMPL::PROCESS-SCRIPT
+  40      0   0.0   1416 100.0   1416 100.0        -  SB-IMPL::TOPLEVEL-INIT
+  41      0   0.0   1416 100.0   1416 100.0        -  (FLET SB-UNIX::BODY :IN SB-IMPL::START-LISP)
+  42      0   0.0   1416 100.0   1416 100.0        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-IMPL::START-LISP)
+  43      0   0.0   1416 100.0   1416 100.0        -  SB-IMPL::%START-LISP
+  44      0   0.0   1416 100.0   1416 100.0        -  foreign function call_into_lisp_
+------------------------------------------------------------------------
+          0   0.0                                     elsewhere

@@ -22,7 +22,9 @@
         (multiple-value-bind (string olen olpoint otpoint opoint)
             (flonum-to-string x nil fdigits scale fmin exponent)
           (unless (and (string= string buffer :end2 len)
-                       (eql len olen) (eq lpoint olpoint) (eq tpoint otpoint)
+                       (eql len olen)
+                       (eq lpoint olpoint)
+                       (eq tpoint otpoint)
                        (eql point opoint))
             (cl-user::fail (*failures*)
               "FAIL ~S ~S: buffer ~S ~S ~S ~S, string ~S ~S ~S ~S~%"

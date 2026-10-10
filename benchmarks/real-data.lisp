@@ -45,21 +45,25 @@
                     collect (coerce line 'simple-string))
             'simple-vector)))
 
+(defun time-pass (f v repeat)
+  "Call F on every element of V, REPEAT times over; return ns per call."
+  (declare (function f) (simple-vector v))
+  (let ((t0 (get-internal-real-time)))
+    (loop repeat repeat
+          do (loop for x across v do (funcall f x)))
+    (/ (* 1d9 (/ (- (get-internal-real-time) t0)
+                 internal-time-units-per-second))
+       (* repeat (length v)))))
+
 (defun bench (f v)
   "Best of *RUNS* passes, in ns per element of V. A pass goes over V as
 many times as needed to make at least 1M calls, so that small files are
 timed over more than the clock's resolution."
-  (declare (function f) (simple-vector v))
   (let ((repeat (ceiling 1000000 (length v))))
     (loop repeat *runs*
           minimize (progn
                      (sb-ext:gc)
-                     (let ((t0 (get-internal-real-time)))
-                       (loop repeat repeat
-                             do (loop for x across v do (funcall f x)))
-                       (/ (* 1d9 (/ (- (get-internal-real-time) t0)
-                                    internal-time-units-per-second))
-                          (* repeat (length v))))))))
+                     (time-pass f v repeat)))))
 
 (defvar *failures* 0)
 
