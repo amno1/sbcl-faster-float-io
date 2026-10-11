@@ -1,0 +1,27 @@
+Measured on 2026-10-11, on mains power, with the sbcl-parse-float build of that night
+(the version of PARSE-FLOAT in it does not matter here).
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script benchmarks/parse-integer-bench.lisp
+2.6.7.33.sbcl-parse-float.754-e7cf4494a-WIP
+ns per call, best of 9; all versions compiled the same way, alternating
+
+                                       string        old  dispatch  ascii
+parse-integer10, 1-5 digits            character    12.0      19.0   12.0
+parse-integer10, 1-5 digits            base         12.0      11.0   12.0
+parse-integer10, 9 digits              character     9.0      28.0   11.0
+parse-integer10, 9 digits              base         10.0       8.0   11.0
+parse-integer10, 18 digits             character    15.0      52.0   17.0
+parse-integer10, 18 digits             base         16.0      12.0   16.0
+parse-integer10, 30 digits             character   232.0     294.0  246.0
+parse-integer10, 30 digits             base        235.0     232.0  233.0
+parse-integer16, 8 digits              character    30.0      51.0   33.0
+parse-integer16, 8 digits              base         31.0      29.0   29.0
+parse-integer16, 16 digits             character    67.0     109.0   71.0
+parse-integer16, 16 digits             base         68.0      63.0   62.0
+parse-integer :radix 10, 1-5 digits    character    27.0      33.0   31.0
+parse-integer :radix 10, 1-5 digits    base         27.0      32.0   30.0
+parse-integer :radix 10, 18 digits     character    62.0     107.0  104.0
+parse-integer :radix 10, 18 digits     base         77.0     105.0  102.0
+parse-integer :radix 36, 8 digits      character    57.0      76.0   68.0
+parse-integer :radix 36, 8 digits      base         57.0      78.0   67.0
+
+OK: 0 differences from OLD

@@ -1,7 +1,7 @@
-From 9f0bc4788bbf1102e8998dec01803912fcacfea8 Mon Sep 17 00:00:00 2001
+From c722a3cf6931cab0a1066e634ea0ffbd6e9c8eef Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:19:37 +0200
-Subject: [PATCH 3/5] Make the float-reading fast path independent of the build
+Subject: [PATCH 3/7] Make the float-reading fast path independent of the build
  host
 
 Generate DECIMAL-TO-DOUBLE-BITS and DECIMAL-TO-SINGLE-BITS from one

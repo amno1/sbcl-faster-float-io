@@ -56,6 +56,7 @@ make UPSTREAM=~/src/sbcl ZMIJ=~/src/sbcl-zmij PARSE_FLOAT=~/src/sbcl-parse-float
 | `make bench`        | every benchmark, before and after                       |
 | `make test-int`     | the integer tests, on `READ_FAST` and `INT_PRINT`       |
 | `make bench-int`    | the integer benchmarks, before and after                |
+| `make summary`      | what each patch series changes, and its size            |
 | `make <name>`       | one file, named as below without `.lisp`: `make fixed`  |
 
 All variables are optional; the defaults are the paths on my machine.  Variables
@@ -69,6 +70,7 @@ for the scripts are given the same way, e.g.  `make THREADS=16 test-long`:
 | `BOTH`         | `~/repos/sb-simd-512`       | a build with both parts                                         |
 | `READ_FAST`    | `~/repos/sbcl-read-fast`    | branch `sbcl-read-fast`                                         |
 | `INT_PRINT`    | `~/repos/sbcl-int-print`    | branch `sbcl-int-print`                                         |
+| `REPO`         | `~/repos/sbcl`              | the SBCL repository with all the branches, for `make summary`   |
 | `THREADS`      | 8                           | threads for the threaded tests                                  |
 | `RUNS`         | 5 or 7                      | passes per benchmark; the best is reported                      |
 | `LIMIT`        | 1,000,000                   | lines per file in `real-data.lisp`                              |
@@ -574,3 +576,29 @@ the fast path on and off, alternately in one process, best of `RUNS` (default
 ```sh
 make fast-path-misses
 ```
+
+#### [`parse-integer-bench.lisp`](benchmarks/parse-integer-bench.lisp)
+
+Would `parse-integer` gain from compiling its body once per string type, which
+made `sb-ext:parse-float` faster (`r7`), or from checking ASCII digits before
+`digit-char-p`? It compiles SBCL's own `parse-integer` (read from the source
+tree of the running SBCL) and two modified copies, all the same way, and times
+them alternately in one process: DISPATCH compiles the body once per string
+type with `string-dispatch`; ASCII also computes the weight of ASCII digits and
+letters from their code, calling `digit-char-p` only above code 127. Each comes
+as the general `parse-integer` and as `parse-integer10` and `parse-integer16`,
+which compiled calls with a constant radix of 10 (or none) or 16 use. All
+versions must first agree on edge cases and on every timed string. Any SBCL.
+
+Result: no gain, so `parse-integer` is left as it is. `parse-integer10` takes
+10-16 ns for up to 18 digits already, and neither copy is faster on character
+strings, the usual kind; DISPATCH alone is up to 3.5x slower on them, and on
+the general function with a variable radix both copies are slower. Base
+strings gain 1-5 ns from DISPATCH. `parse-integer` declares `digit-char-p`
+inline, so its loop is already a few instructions per character. Output:
+[`log-parse-integer-bench.txt`](results/log-parse-integer-bench.txt).
+
+```sh
+make parse-integer-bench
+```
+

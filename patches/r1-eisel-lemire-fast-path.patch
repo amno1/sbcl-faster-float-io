@@ -1,7 +1,7 @@
-From 7f00474c22dcecf324b85f8ef9f16f24d708931b Mon Sep 17 00:00:00 2001
+From 5fd14c08b49f2493d2f3c8fc83c82bac09071256 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:19:37 +0200
-Subject: [PATCH 1/5] Eisel-Lemire fast path for reading floats
+Subject: [PATCH 1/7] Eisel-Lemire fast path for reading floats
 
 MAKE-FLOAT first tries MAKE-FLOAT/FAST, which reads a token with at
 most 19 significant digits into a 64-bit significand and decimal

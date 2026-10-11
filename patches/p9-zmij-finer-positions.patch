@@ -1,4 +1,4 @@
-From 2978fccc9d056fdcde39e8dcce5ac55c6a64a11b Mon Sep 17 00:00:00 2001
+From a9abe7527b0256d331f06ec358be8396bc85604e Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 09/13] Use zmij for positions finer than the float's spacing
@@ -15,10 +15,10 @@ back. Output is unchanged. (format nil "~G" x) is about 1.6x faster.
  2 files changed, 41 insertions(+), 12 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index e89c0b07e..5df972636 100644
+index 729e9a125..a28a5fb3b 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1819,11 +1819,35 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1843,11 +1843,35 @@ variable: an unreadable object representing the error is printed instead.")
          (let ((shift (- float-digits (integer-length f))))
            (setq f (ash f shift)
                  e (- e shift)))))

@@ -1,4 +1,4 @@
-From a79c311873cd1c8956fbc3b44ec6773b77b68eef Mon Sep 17 00:00:00 2001
+From 6516f151fc27abe9b6c3ca0a21b7b56de2ee19d9 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:48 +0200
 Subject: [PATCH 10/13] ~G, values below one unit and exact ties: fewer digit
@@ -18,10 +18,10 @@ below 0.01 about 6x faster.
  2 files changed, 60 insertions(+), 14 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index 5df972636..114ea781e 100644
+index a28a5fb3b..66064ee7e 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1876,10 +1876,27 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1900,10 +1900,27 @@ variable: an unreadable object representing the error is printed instead.")
                    (values q (cond ((< twice-r den) -1)
                                    ((= twice-r den) 0)
                                    (t 1)))))))
@@ -52,7 +52,7 @@ index 5df972636..114ea781e 100644
               (n (do ((n 1 (1+ n))
                       (p 10 (* p 10)))
                      ((< g p) n)))
-@@ -2156,6 +2173,27 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -2182,6 +2199,27 @@ variable: an unreadable object representing the error is printed instead.")
             (print-float-exponent float (1- k) stream)))
       float)))
  

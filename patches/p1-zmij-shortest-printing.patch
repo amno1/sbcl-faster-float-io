@@ -1,4 +1,4 @@
-From f3bbfe56d82fb0ba0dabc4a1be6ecf8ee63de3e9 Mon Sep 17 00:00:00 2001
+From 86ddf7631f451622fb35cf195dd96f0bacf9d33d Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 01/13] Use zmij for shortest float printing
@@ -32,10 +32,10 @@ Subnormals now print their true shortest form (1.4295402e-39 prints as
  create mode 100644 src/code/zmij.lisp
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index 985900a13..62043eaf1 100644
+index 80c64c43c..645773d12 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1625,6 +1625,12 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1642,6 +1642,12 @@ variable: an unreadable object representing the error is printed instead.")
                            prologue-fun
                            epilogue-fun
                            float &optional position relativep)
@@ -48,7 +48,7 @@ index 985900a13..62043eaf1 100644
    (let ((print-base 10)                 ; B
          (float-radix 2)                 ; b
          (float-digits (float-digits float)) ; p
-@@ -1762,6 +1768,13 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1779,6 +1785,13 @@ variable: an unreadable object representing the error is printed instead.")
                  (scale r s m+ m-))))))))
  
  (defun flonum-to-digits (float &optional position relativep)
@@ -62,7 +62,7 @@ index 985900a13..62043eaf1 100644
    (if (zerop float)
        (values 0 "0")
        (let ((digit-characters "0123456789"))
-@@ -1773,7 +1786,42 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1790,7 +1803,42 @@ variable: an unreadable object representing the error is printed instead.")
             (lambda (k) (values k (get-pushed-string)))
             float position relativep)))))
  

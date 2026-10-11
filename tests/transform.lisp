@@ -22,6 +22,13 @@
 (defun compiled (control)
   (compile nil `(lambda (x) (format nil ,control x))))
 
+;;; COMPILED without the compiler's diagnostics, for the control strings
+;;; below that are invalid or need more arguments than one, on purpose.
+(defun compiled-quietly (control)
+  (let ((*error-output* (make-broadcast-stream))
+        (*standard-output* (make-broadcast-stream)))
+    (compiled control)))
+
 (defun outcome (thunk)
   (handler-case (funcall thunk)
     (error (c) (list :error (type-of c)))))
@@ -75,7 +82,7 @@
                    "~:G" "~,V$" "~#$" "x~$" "~1,2,3,4,5,6F" "~D"))
   (incf *checked*)
   (when (ignore-errors
-         (let ((fn (compiled control)))
+         (let ((fn (compiled-quietly control)))
            (some (lambda (name) (calls-p fn name))
                  '("FORMAT-FIXED-STRING" "FORMAT-EXPONENTIAL-STRING"
                    "FORMAT-GENERAL-STRING" "FORMAT-DOLLARS-STRING"))))

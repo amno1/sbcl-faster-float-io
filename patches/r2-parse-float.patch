@@ -1,7 +1,7 @@
-From 77993af2ac5c4b1302df9bb0f2238722e3ec0423 Mon Sep 17 00:00:00 2001
+From 0c1fc895794f20847b9040d2e61d3708c1160264 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:19:37 +0200
-Subject: [PATCH 2/5] Add SB-EXT:PARSE-FLOAT
+Subject: [PATCH 2/7] Add SB-EXT:PARSE-FLOAT
 
 (PARSE-FLOAT string &key start end junk-allowed)
 

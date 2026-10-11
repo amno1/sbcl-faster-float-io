@@ -3,12 +3,12 @@
 This continues the float work in [`readme.md`](readme.md) with two smaller
 changes for integers, each on its own branch:
 
-- **Reading**: a fast path in the reader's `read-token` that recognizes
-  integers and floats directly in the string being read. Branch
+**Reading**: a fast path in the reader's `read-token` that recognizes integers
+  and floats directly in the string being read. Branch
   [`sbcl-read-fast`](https://github.com/amno1/sbcl/tree/sbcl-read-fast), based
   on `sbcl-parse-float`, because it converts floats with Eisel-Lemire.
 
-- **Printing**: base-10 printing of word-sized integers without a division per
+**Printing**: base-10 printing of word-sized integers without a division per
   digit. Branch
   [`sbcl-int-print`](https://github.com/amno1/sbcl/tree/sbcl-int-print), based
   on `sbcl-zmij`, because it writes the digits with zmij's SSE2 digit routine.
@@ -313,7 +313,7 @@ gain comes from.
 ### A bug found along the way
 
 Printing `most-negative-fixnum` in base 2 or 4 with `prin1-to-string` signals an
-internal error ("Should not happen") in SBCL 2.6.9 and upstream master:
+internal error ("Should not happen") in SBCL 2.6.9 and earlier:
 
 ```lisp
 (let ((*print-base* 2)) (prin1-to-string most-negative-fixnum))
@@ -330,8 +330,9 @@ estimated size. The code has been there since 2017, when `prin1-to-string` of
 integers started writing into a preallocated string.
 
 The fix uses `n-fixnum-bits` instead, with a regression test in
-`tests/print.impure.lisp`. It was sent upstream as its own patch, and is a
-separate commit in `sbcl-int-print`.
+`tests/print.impure.lisp`. It is upstream as
+[`16e068182`](https://github.com/sbcl/sbcl/commit/16e068182), so the branches
+no longer carry it.
 
 ### Correctness
 

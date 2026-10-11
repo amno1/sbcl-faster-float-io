@@ -1,4 +1,4 @@
-From eb14cde34c05abcbc09470e200122e22ddf14c07 Mon Sep 17 00:00:00 2001
+From d9150b73ded63f7bae5a9fb4f78ce95562eb0c2d Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 03/13] Build PRIN1-TO-STRING and PRINC-TO-STRING results
@@ -14,10 +14,10 @@ entry under *PRINT-PRETTY* keep the general path.
  2 files changed, 39 insertions(+), 12 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index 903f017bf..40d8bbf8c 100644
+index 065df4c22..6b30b40a9 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -212,6 +212,20 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -253,6 +253,20 @@ variable: an unreadable object representing the error is printed instead.")
                 (setf (%array-fill-pointer string)
                       (finite-base-string-output-stream-pointer stream))
                 string)))))
@@ -38,7 +38,7 @@ index 903f017bf..40d8bbf8c 100644
      ;; Could do something for other numeric types, symbols, ...
      (t
       (%with-output-to-string (stream)
-@@ -1786,20 +1800,20 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1803,20 +1817,20 @@ variable: an unreadable object representing the error is printed instead.")
             (lambda (k) (values k (get-pushed-string)))
             float position relativep)))))
  
@@ -70,7 +70,7 @@ index 903f017bf..40d8bbf8c 100644
        (macrolet ((put (char)
                     `(progn (setf (schar out p) ,char) (incf p)))
                   ;; At most 17 characters: an inline loop beats REPLACE's
-@@ -1811,6 +1825,8 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1828,6 +1842,8 @@ variable: an unreadable object representing the error is printed instead.")
                     `(loop repeat ,count do (put #\0)))
                   (put-digit (d)
                     `(put (code-char (+ (char-code #\0) ,d)))))
@@ -79,7 +79,7 @@ index 903f017bf..40d8bbf8c 100644
          (let ((exponent
                  (cond ((not (< -3 k 8))
                         ;; d.ddd, then the exponent
-@@ -1861,7 +1877,14 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1878,7 +1894,14 @@ variable: an unreadable object representing the error is printed instead.")
                    (when (or (plusp hundreds) (plusp tens))
                      (put-digit tens))
                    (put-digit ones)))))

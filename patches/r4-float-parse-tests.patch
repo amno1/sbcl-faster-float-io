@@ -1,7 +1,7 @@
-From 321e0f71dfb3c5a4f171c9f1dd8fa5c74e998725 Mon Sep 17 00:00:00 2001
+From 41b90eff591ccf29ae95e0daf2955b19c29aa9a4 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:19:37 +0200
-Subject: [PATCH 4/5] Add tests for reading floats and SB-EXT:PARSE-FLOAT
+Subject: [PATCH 4/7] Add tests for reading floats and SB-EXT:PARSE-FLOAT
 
 tests/float-parse.pure.lisp: the reader's fast path against its exact
 code, SB-EXT:PARSE-FLOAT against READ-FROM-STRING and an exact

@@ -59,9 +59,9 @@ use it myself.
   **Reading** floats is about 1.3-1.7x faster for short and ordinary
   numbers (1.1-1.8x on real-world data) and about 6x faster for doubles
   with large exponents. A new function, **`sb-ext:parse-float`**, parses a
-  float from a string like `parse-integer` parses an integer, 3-4.5x faster
-  than `read-from-string`, and 5-6x faster than reading was before on
-  real-world data.
+  float from a string like `parse-integer` parses an integer, about 3.5-5x
+  faster than `read-from-string`, and 5.5-7x faster than reading was before
+  on real-world data.
 
   **Output is unchanged**, with one deliberate exception: subnormal floats
   (the tiny numbers below about 1e-308 for doubles and 1e-38 for singles)
@@ -191,6 +191,13 @@ between sessions; the ratios are stable. The benchmark files and the `make`
 targets that run them are described in [`tests.md`](tests.md), and the full
 output is in [`results`](results).
 
+The `sb-ext:parse-float` numbers were measured again on 2026-10-11, after its
+last change (`r7`, one compiled copy of its body per string type), with the
+branch rebuilt on upstream commit
+[`6236fe846`](https://github.com/sbcl/sbcl/commit/6236fe846) and the same
+"before" build. Upstream's reader is the same in both commits, and the other
+reading numbers of that session agreed with the ones below within a few ns.
+
 **Printing**, random bit patterns (the whole floating-point range):
 
 |                            | before | after |
@@ -234,10 +241,10 @@ path, which was already fast.
 
 |                                | parse-float | read-from-string |
 |--------------------------------|------------:|-----------------:|
-| short                          |          20 |               90 |
-| 17 digits, ordinary            |          60 |              190 |
-| 17 digits, exponent up to ±300 |          70 |              210 |
-| single-floats                  |          40 |              140 |
+| short                          |          20 |              100 |
+| 17 digits, ordinary            |          50 |              190 |
+| 17 digits, exponent up to ±300 |          60 |              210 |
+| single-floats                  |          40 |              150 |
 
 **Real-world data**: the number files of
 [`float-data`](https://github.com/fastfloat/float-data) (geographic coordinates,
@@ -248,20 +255,20 @@ printed with `prin1-to-string`; `parse-float` reads the line with
 
 | file                      | type   | read before | read after | parse-float | print before | print after |
 |---------------------------|--------|------------:|-----------:|------------:|-------------:|------------:|
-| `bitcoin` (prices)        | double |         193 |        133 |          35 |          191 |          52 |
-| `canada` (coordinates)    | double |         315 |        172 |          54 |          248 |          54 |
-| `gaia` (star catalogue)   | double |         320 |        183 |          58 |          286 |          60 |
-| `hellfloat64` (synthetic) | double |       1,287 |        205 |          74 |        1,984 |          68 |
-| `marine_ik` (robotics)    | single |         153 |        104 |          24 |          121 |          41 |
-| `mesh` (3D model)         | double |         143 |        106 |          26 |          149 |          50 |
-| `mobilenetv3_large` (AI)  | single |         224 |        131 |          40 |          177 |          51 |
-| `noaa_gfs_1p00` (weather) | double |         191 |        120 |          32 |          329 |          52 |
+| `bitcoin` (prices)        | double |         193 |        133 |          32 |          191 |          52 |
+| `canada` (coordinates)    | double |         315 |        172 |          48 |          248 |          54 |
+| `gaia` (star catalogue)   | double |         320 |        183 |          53 |          286 |          60 |
+| `hellfloat64` (synthetic) | double |       1,287 |        205 |          69 |        1,984 |          68 |
+| `marine_ik` (robotics)    | single |         153 |        104 |          22 |          121 |          41 |
+| `mesh` (3D model)         | double |         143 |        106 |          24 |          149 |          50 |
+| `mobilenetv3_large` (AI)  | single |         224 |        131 |          38 |          177 |          51 |
+| `noaa_gfs_1p00` (weather) | double |         191 |        120 |          30 |          329 |          52 |
 | `noaa_global_hourly_2023` | double |         114 |        100 |          21 |           92 |          49 |
-| `numbers` (random 0-1)    | double |         237 |        151 |          39 |          220 |          53 |
+| `numbers` (random 0-1)    | double |         237 |        151 |          35 |          220 |          53 |
 
 On real data, reading with `read-from-string` is 1.1-1.8x faster (6x on the
-synthetic `hellfloat64`), `sb-ext:parse-float` is 5-6.5x faster than reading
-was, and printing is 2-6x faster (29x on `hellfloat64`). Every printed value
+synthetic `hellfloat64`), `sb-ext:parse-float` is 5.5-7x faster than reading
+was (19x on `hellfloat64`), and printing is 2-6x faster (29x on `hellfloat64`). Every printed value
 read back as the same float. The gains are largest for long numbers such as
 `canada` and `gaia`, and smallest for short ones such as
 `noaa_global_hourly_2023` (`1000.0`, `-2.6`), where the reader's and the
@@ -300,7 +307,7 @@ is `third-party.lisp`.
 **Correctness**: 1,000,000 random doubles and 1,000,000 random singles (both
 signs, subnormals included) printed with `prin1-to-string` and parsed back. A
 result must be the original float, bit for bit; an error counts as a failure.
-n
+
 | failures                 |  doubles | singles |
 |--------------------------|---------:|--------:|
 | `sb-ext:parse-float`     |        0 |       0 |
@@ -316,16 +323,16 @@ the exact value as a rational and converts it once, so it is always right.
 
 **Speed**, nanoseconds per string, best of 7, on strings that this test
 generates itself (so `read-from-string` differs slightly from the reading tables
-above):
+above), measured on 2026-10-11 with `sb-ext:parse-float` after `r7`:
 
 |                                | `sb-ext:parse-float` | `parse-float` | `parse-number` | `read-from-string` |
 |--------------------------------|---------------------:|--------------:|---------------:|-------------------:|
 | short (`1.5`, `12.25`)         |                   20 |           130 |            180 |                 90 |
-| 17 digits, ordinary            |                   50 |           210 |            330 |                160 |
-| 17 digits, exponent up to ±300 |                   80 |           350 |          2,140 |                200 |
-| single-floats                  |                   50 |           200 |            830 |                140 |
+| 17 digits, ordinary            |                   40 |           210 |            330 |                170 |
+| 17 digits, exponent up to ±300 |                   60 |           340 |          2,070 |                200 |
+| single-floats                  |                   40 |           200 |            810 |                150 |
 
-`sb-ext:parse-float` is 4 to 6.5 times faster than `parse-float` and 7 to 27
+`sb-ext:parse-float` is 5 to 6.5 times faster than `parse-float` and 8 to 35
 times faster than `parse-number`. These were run on the patched SBCL;
 `parse-number` does not use the new reader fast path: its rational arithmetic
 with powers of ten up to 10^300 is why it slows down so much with large
@@ -340,8 +347,8 @@ printed digits of subnormals, which I expect to be rare.
 
 There is a new function, **`sb-ext:parse-float`**, which uses the faster float
 parser directly, without going through the Lisp reader. That saves the reader's
-own overhead, roughly 70-140 ns per number: it is 3-4.5x faster than
-`read-from-string`, and 5-18x faster than reading floats was before these
+own overhead, roughly 80-150 ns per number: it is about 3.5-5x faster than
+`read-from-string`, and 5.5-19x faster than reading floats was before these
 patches.
 
 A compiler transform for **`(format nil "<one float directive>" x)`**.  The
@@ -375,7 +382,7 @@ round in `~F`, `~E` and `~G`. The aim was to disrupt as little as possible.
 Eisel-Lemire need 64-bit integer arithmetic.
 
 A few rare cases still use the original code, so they are correct but not
-faster.
+nfaster.
 
 In **`format`**:
 
@@ -455,12 +462,13 @@ A bug in SBCL's reader, now fixed upstream:
   `truncate-exponent` could cross zero. The fix is upstream as
   [`cf400f389`](https://github.com/sbcl/sbcl/commit/cf400f389).
 
-A bug in SBCL's printer, sent upstream:
+A bug in SBCL's printer, now fixed upstream:
 
-  `(let ((*print-base* 2)) (prin1-to-string most-negative-fixnum))` signals an
-  internal error, and so does base 4: `prin1-to-string` sizes its string with
+  `(let ((*print-base* 2)) (prin1-to-string most-negative-fixnum))` signalled
+  an internal error, and so did base 4: `prin1-to-string` sized its string with
   an estimate one bit too small for `most-negative-fixnum`. Found while testing
-  the integer printer; see [`integers.md`](integers.md).
+  the integer printer; see [`integers.md`](integers.md). The fix is upstream as
+  [`16e068182`](https://github.com/sbcl/sbcl/commit/16e068182).
 
 ## Patches
 
@@ -490,17 +498,19 @@ data, and 70 of documentation and license notice.
 3. Build-host independence, the subnormal simplification, and 32-bit warnings.
 4. Tests: `tests/float-parse.pure.lisp`.
 5. Credits for `fast_float` in `COPYING`; `sb-ext:parse-float` in the manual.
+6. A small cleanup of the fast path: each sign character is read once.
+7. `sb-ext:parse-float`: one compiled copy of its body per string type.
 
 The branches also contain follow-up commits (CI fixes, typos). The
 [`patches`](patches) directory has them squashed into the topics above, one
 patch per topic, made with `git format-patch` against upstream SBCL commit
-[`c2aca591d`](https://github.com/sbcl/sbcl/commit/c2aca591d): `p1`-`p13` for
-printing and `r1`-`r5` for reading, numbered as in the lists above. Each series
+[`6236fe846`](https://github.com/sbcl/sbcl/commit/6236fe846): `p1`-`p13` for
+printing and `r1`-`r7` for reading, numbered as in the lists above. Each series
 applies with `git am` on its own:
 
 ```sh
 git am patches/p*.patch    # in the order p1, p2, ... p13
-git am patches/r*.patch    # r1 ... r5
+git am patches/r*.patch    # r1 ... r7
 ```
 
 Applying both series on top of each other conflicts only in `COPYING`, where
@@ -508,17 +518,16 @@ Applying both series on top of each other conflicts only in `COPYING`, where
 [`sb-simd-512`](https://github.com/amno1/sbcl/tree/sb-simd-512) branch has both,
 merged. Applying all patches of a series gives exactly the source of its branch.
 
-The integer work adds two more series, about 460 lines in all, made from their
+The integer work adds two more series, about 440 lines in all, made from their
 branches:
 
-- `n1`-`n2`, on top of `r1`-`r5` (branch `sbcl-read-fast`): the fast path in
+- `n1`-`n2`, on top of `r1`-`r7` (branch `sbcl-read-fast`): the fast path in
   `read-token`, 140 lines, and its tests, `tests/read-number.pure.lisp`.
-- `i1`-`i3`, on top of `p1`-`p13` (branch `sbcl-int-print`): base-10 word
-  printing, 40 lines; the `most-negative-fixnum` fix with its regression test;
-  and the tests, `tests/integer-print.pure.lisp`.
+- `i1`-`i2`, on top of `p1`-`p13` (branch `sbcl-int-print`): base-10 word
+  printing, 40 lines, and its tests, `tests/integer-print.pure.lisp`.
 
 ```sh
-git am patches/n*.patch    # after r1 ... r5
+git am patches/n*.patch    # after r1 ... r7
 git am patches/i*.patch    # after p1 ... p13
 ```
 

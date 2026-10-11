@@ -1,4 +1,4 @@
-From 87a98e184d979aa03bee989955b92e9020f12f2a Mon Sep 17 00:00:00 2001
+From c1b84bd5e12eb7c3d1c92f632e83567c84509f4c Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 07/13] Lay out ~F, ~$ and ~E floats in stack buffers
@@ -12,15 +12,15 @@ the significand the same way and writes the exponent's digits into a
 small stack buffer instead of calling DECIMAL-STRING, which printed
 through a string stream. Output is unchanged.
 ---
- src/code/print.lisp         | 120 ++++++++++++++++++++++++++++--------
- src/code/target-format.lisp |  67 ++++++++++++++++----
- 2 files changed, 150 insertions(+), 37 deletions(-)
+ src/code/print.lisp         | 126 +++++++++++++++++++++++++++++-------
+ src/code/target-format.lisp |  67 +++++++++++++++----
+ 2 files changed, 156 insertions(+), 37 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index cc5dc9383..e9b07e60d 100644
+index 6ec291741..3446e6715 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1547,6 +1547,26 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1564,6 +1564,32 @@ variable: an unreadable object representing the error is printed instead.")
  ;;;
  ;;; FLOAT-DIGITS actually generates the digits for positive numbers;
  ;;; see below for comments.
@@ -29,25 +29,31 @@ index cc5dc9383..e9b07e60d 100644
 +;;; zeros, a point, RIGHT-ZEROS zeros, digits [RIGHT-START, RIGHT-END) and
 +;;; TRAILING-ZEROS zeros.
 +(declaim (inline flonum-layout))
++;; more verbose than it could be, but doesn't do unnecessary computations
 +(defun flonum-layout (e n fdigits fmin exponent-zero)
 +  (declare (type integer e) (type index n))
-+  (if (or (and (= e 0) exponent-zero)
-+          (plusp e))
-+      ;; ddd[000].ddd[000]
-+      (let ((split (min n e)))
-+        (values split (max 0 (- e n)) 0 split n
-+                (if fdigits (max 0 (- fdigits (- n split))) 0)))
-+      ;; .[000]ddd[000]
-+      (let ((end (if fdigits
-+                     (min n (max (or fmin 0) (+ fdigits e)))
-+                     n)))
-+        (values 0 0 (max 0 (- e)) 0 end
-+                (if fdigits (max 0 (+ fdigits e (- n))) 0)))))
++  (let ((integer-part (or (and (= e 0) exponent-zero) (plusp e))))
++    (cond ((null fdigits)
++           ;; All N digits, no padding.
++           (if integer-part
++               (let ((split (min n e)))
++                 (values split (max 0 (- e n)) 0 split n 0))
++               (values 0 0 (max 0 (- e)) 0 n 0)))
++          (integer-part
++           ;; ddd[000].ddd[000]
++           (let ((split (min n e)))
++             (values split (max 0 (- e n)) 0 split n
++                     (max 0 (- fdigits (- n split))))))
++          (t
++           ;; .[000]ddd[000]
++           (values 0 0 (max 0 (- e)) 0
++                   (min n (max (or fmin 0) (+ fdigits e)))
++                   (max 0 (+ fdigits e (- n))))))))
 +
  (defun flonum-to-string (x &optional width fdigits scale fmin exponent-zero)
    (declare (type float x))
    (multiple-value-bind (e string)
-@@ -1582,23 +1602,9 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1599,23 +1625,9 @@ variable: an unreadable object representing the error is printed instead.")
             (digits string)
             (n (length digits)))
        (declare (type index n))
@@ -72,7 +78,7 @@ index cc5dc9383..e9b07e60d 100644
          (let* ((point (+ left-end left-zeros))
                 (length (+ point 1 right-zeros (- right-end right-start)
                            trailing-zeros))
-@@ -1802,7 +1808,7 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1820,7 +1832,7 @@ variable: an unreadable object representing the error is printed instead.")
  ;;; decimal in the interval is the value rounded to a multiple of
  ;;; 10^POSITION. That is computed here exactly. Exact ties (two
  ;;; candidates) and results that round to zero go to the general code.
@@ -81,7 +87,7 @@ index cc5dc9383..e9b07e60d 100644
    (declare (type (or single-float double-float) float)
             (type fixnum position))
    (multiple-value-bind (f e) (integer-decode-float float)
-@@ -1817,7 +1823,7 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1835,7 +1847,7 @@ variable: an unreadable object representing the error is printed instead.")
      (unless (if (>= position 0)
                  (or (<= e 0) (>= (expt 10 position) (ash 1 e)))
                  (and (< e 0) (>= (ash 1 (- e)) (expt 10 (- position)))))
@@ -90,7 +96,7 @@ index cc5dc9383..e9b07e60d 100644
      ;; value / 10^POSITION = Q + R/DEN. ROUND compares R with DEN/2:
      ;; -1 below, 0 at a tie, 1 above.
      (multiple-value-bind (q round)
-@@ -1847,7 +1853,7 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1865,7 +1877,7 @@ variable: an unreadable object representing the error is printed instead.")
                                    ((= twice-r den) 0)
                                    (t 1)))))))
        (when (or (zerop q) (zerop round))
@@ -99,7 +105,7 @@ index cc5dc9383..e9b07e60d 100644
        ;; G is below 2^53, since 10^POSITION >= 2^E.
        (let* ((g (if (plusp round) (1+ q) q))
               (n (do ((n 1 (1+ n))
-@@ -1859,12 +1865,78 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1877,12 +1889,78 @@ variable: an unreadable object representing the error is printed instead.")
          (loop (multiple-value-bind (g/10 rem) (truncate g 10)
                  (unless (zerop rem) (return))
                  (setq g g/10 n (1- n))))

@@ -1,4 +1,4 @@
-From 05eb7af9aa3b9de40f08b223485ad5b612dace4a Mon Sep 17 00:00:00 2001
+From 4b71cfe1645c8d27a6e42a500141b6378ef820c5 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 02/13] Print floats from a single buffer
@@ -12,10 +12,10 @@ WRITE-STRING calls plus PRINT-FLOAT-EXPONENT.
  1 file changed, 73 insertions(+), 28 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index 62043eaf1..903f017bf 100644
+index 645773d12..065df4c22 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1786,37 +1786,82 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1803,37 +1803,82 @@ variable: an unreadable object representing the error is printed instead.")
             (lambda (k) (values k (get-pushed-string)))
             float position relativep)))))
  

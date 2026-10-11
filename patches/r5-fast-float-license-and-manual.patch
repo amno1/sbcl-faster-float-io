@@ -1,7 +1,7 @@
-From 4c90fa069cc5874641cef5cd9698f4eb5709a4b5 Mon Sep 17 00:00:00 2001
+From eb9dd86e4c81b12a1eb3b9cc68ef92d5fd70ec31 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:19:37 +0200
-Subject: [PATCH 5/5] Add fast_float license notice; document
+Subject: [PATCH 5/7] Add fast_float license notice; document
  SB-EXT:PARSE-FLOAT
 
 The Eisel-Lemire fast path in the reader is adapted from fast_float,
@@ -64,7 +64,7 @@ index 4220b3397..2d49f6853 100644
 +;;;; TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 +;;;; SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 diff --git a/doc/manual/beyond-ansi.texinfo b/doc/manual/beyond-ansi.texinfo
-index feac11af0..13c720b1b 100644
+index 9106d7903..82efcc55a 100644
 --- a/doc/manual/beyond-ansi.texinfo
 +++ b/doc/manual/beyond-ansi.texinfo
 @@ -2679,6 +2679,37 @@ Note that the unencapsulated function may be @code{eq} to the designated

@@ -1,4 +1,4 @@
-From d6aa10b08226b4425ee9474867cb366d7c1449bb Mon Sep 17 00:00:00 2001
+From 31f4736b95768878a2c126252372e7df1ffcf0b3 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 08/13] Exact fast path for relative float digit positions
@@ -11,14 +11,14 @@ integer ratio 1233/4096 for log10(2), so no float arithmetic happens at
 build time. Output is unchanged. (format nil "~12F" x) is about 3x
 faster.
 ---
- src/code/print.lisp | 51 ++++++++++++++++++++++++++++++++++++++++++---
- 1 file changed, 48 insertions(+), 3 deletions(-)
+ src/code/print.lisp | 53 ++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 50 insertions(+), 3 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index e9b07e60d..e89c0b07e 100644
+index 3446e6715..729e9a125 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1938,12 +1938,57 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1962,12 +1962,59 @@ variable: an unreadable object representing the error is printed instead.")
                       trailing-zeros)))
            (values length (= point 0) (= point (1- length)) point))))))
  
@@ -75,7 +75,9 @@ index e9b07e60d..e89c0b07e 100644
 +                 (typep position '(integer 1 #.most-positive-fixnum))))
 +    (multiple-value-bind (k string)
 +        (flonum-to-digits/position
-+         float (if relativep (flonum-relative-position float position) position))
++         float (if relativep
++                   (flonum-relative-position float position)
++                   position))
        (when k
          (return-from flonum-to-digits (values k string)))))
    #+64-bit

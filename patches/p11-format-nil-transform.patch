@@ -1,4 +1,4 @@
-From a942f3eb3943445799d8b6322a4dfa15117f966c Mon Sep 17 00:00:00 2001
+From cbabebbe0c6f8801601e425b0ed961f25ef78b47 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:48 +0200
 Subject: [PATCH 11/13] Compile single ~F, ~E, ~G and ~$ FORMAT NIL calls
@@ -14,12 +14,12 @@ through the stream version, so both always agree. ~G's choice between
 fixed and exponential form is shared in FORMAT-GENERAL-PLAN. Output is
 unchanged.
 ---
- src/code/target-format.lisp | 489 ++++++++++++++++++++++++------------
- src/compiler/srctran.lisp   |  56 +++++
- 2 files changed, 387 insertions(+), 158 deletions(-)
+ src/code/target-format.lisp | 495 ++++++++++++++++++++++++------------
+ src/compiler/srctran.lisp   |  56 ++++
+ 2 files changed, 393 insertions(+), 158 deletions(-)
 
 diff --git a/src/code/target-format.lisp b/src/code/target-format.lisp
-index d026aad2b..337509dd8 100644
+index d026aad2b..abdfa4dc4 100644
 --- a/src/code/target-format.lisp
 +++ b/src/code/target-format.lisp
 @@ -566,6 +566,51 @@
@@ -160,7 +160,7 @@ index d026aad2b..337509dd8 100644
             (cond ((and w (< spaceleft 0) ovf)
                    ;; field width overflow
                    (dotimes (i w)
-@@ -642,6 +698,53 @@
+@@ -642,6 +698,56 @@
                      (write-char #\0 stream))
                    nil))))))))
  
@@ -184,8 +184,11 @@ index d026aad2b..337509dd8 100644
 +                 (let* ((pads (if w (max spaceleft 0) 0))
 +                        (sign (cond ((float-sign-bit-set-p number) #\-)
 +                                    (atsign #\+)))
-+                        (result (make-string (+ pads (if sign 1 0) (if lpoint 1 0)
-+                                                len (if tpoint 1 0))
++                        (result (make-string (+ pads
++                                                (if sign 1 0)
++                                                (if lpoint 1 0)
++                                                len
++                                                (if tpoint 1 0))
 +                                             :initial-element pad))
 +                        (i pads))
 +                   (declare (type index i))
@@ -214,7 +217,7 @@ index d026aad2b..337509dd8 100644
  (def-format-interpreter #\E (colonp atsignp params)
    (check-modifier "colon" colonp)
    (interpret-bind-defaults
-@@ -693,76 +796,98 @@
+@@ -693,76 +799,101 @@
    (if (or (float-infinity-p number)
            (float-nan-p number))
        (prin1 number stream)
@@ -321,7 +324,10 @@ index d026aad2b..337509dd8 100644
 +        (decf spaceleft)))
 +    (if (and w ovf e (> elen e))  ;exponent overflow
 +        (emit-chars ovf w)
-+        (let* ((fdig (if d (if (plusp k) (1+ (- d k)) d) nil))
++        (let* ((fdig (when d
++                       (if (plusp k)
++                           (1+ (- d k))
++                           d)))
 +               (fmin (if (minusp k) 1 fdig)))
 +          (multiple-value-bind (fstr flen lpoint tpoint)
 +              (multiple-value-bind (len lpoint tpoint)
@@ -383,7 +389,7 @@ index d026aad2b..337509dd8 100644
  
  (def-format-interpreter #\G (colonp atsignp params)
    (check-modifier "colon" colonp)
-@@ -791,38 +916,71 @@
+@@ -791,38 +922,71 @@
    (if (or (float-infinity-p number)
            (float-nan-p number))
        (prin1 number stream)
@@ -487,7 +493,7 @@ index d026aad2b..337509dd8 100644
  
  (def-format-interpreter #\$ (colonp atsignp params)
    (interpret-bind-defaults ((d 2) (n 1) (w 0) (pad #\space)) params
-@@ -836,36 +994,51 @@
+@@ -836,36 +1000,51 @@
      ;; thing, and at least the user shouldn't be surprised.
      (setq number (coerce number 'single-float)))
    (if (floatp number)

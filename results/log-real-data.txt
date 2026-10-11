@@ -43,3 +43,77 @@ noaa_gfs_1p00             1,000,000 double       120           32      323
 noaa_global_hourly_2023   1,000,000 double       100           21       90
 numbers                      10,001 double       151           39      214
 OK: 0 failures
+
+
+Measured again on 2026-10-11, on mains power, for the sb-ext:parse-float column
+of readme.md: sbcl-parse-float without and with r7 (one compiled copy of
+PARSE-FLOAT's body per string type), both built on upstream 6236fe846,
+alternating, two rounds each; the readme takes the better time per file.
+
+== round 1, without r7
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.sbcl-parse-float.754-e7cf4494a, best of 5, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       135           36      188
+canada                      111,126 double       178           53      243
+gaia                      1,000,000 double       188           58      278
+hellfloat64               1,000,000 double       211           74    1,920
+marine_ik                   114,950 single       106           25      119
+mesh                         73,019 double       109           27      152
+mobilenetv3_large         1,000,000 single       133           41      172
+noaa_gfs_1p00             1,000,000 double       121           33      327
+noaa_global_hourly_2023   1,000,000 double       102           22       94
+numbers                      10,001 double       143           39      215
+OK: 0 failures
+
+== round 1, with r7
+/home/arthur/repos/sbcl-pf-dispatch/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.HEAD.754-e7cf4494a-WIP, best of 5, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       135           32      190
+canada                      111,126 double       178           48      243
+gaia                      1,000,000 double       189           53      285
+hellfloat64               1,000,000 double       210           69    1,974
+marine_ik                   114,950 single       106           22      126
+mesh                         73,019 double       106           24      147
+mobilenetv3_large         1,000,000 single       134           38      180
+noaa_gfs_1p00             1,000,000 double       122           30      333
+noaa_global_hourly_2023   1,000,000 double       101           22       93
+numbers                      10,001 double       142           35      215
+OK: 0 failures
+
+== round 2, without r7
+/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.sbcl-parse-float.754-e7cf4494a, best of 5, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       135           35      185
+canada                      111,126 double       180           53      249
+gaia                      1,000,000 double       187           58      277
+hellfloat64               1,000,000 double       212           73    1,924
+marine_ik                   114,950 single       106           25      117
+mesh                         73,019 double       107           27      144
+mobilenetv3_large         1,000,000 single       133           41      171
+noaa_gfs_1p00             1,000,000 double       121           33      321
+noaa_global_hourly_2023   1,000,000 double       103           22       91
+numbers                      10,001 double       143           39      209
+OK: 0 failures
+
+== round 2, with r7
+/home/arthur/repos/sbcl-pf-dispatch/run-sbcl.sh --script benchmarks/real-data.lisp
+SBCL 2.6.7.33.HEAD.754-e7cf4494a-WIP, best of 5, at most 1,000,000 lines per file
+ns per number
+file                        numbers type        read  parse-float    print
+bitcoin                         943 double       138           32      197
+canada                      111,126 double       178           49      243
+gaia                      1,000,000 double       189           53      284
+hellfloat64               1,000,000 double       209           69    1,973
+marine_ik                   114,950 single       106           22      122
+mesh                         73,019 double       106           24      148
+mobilenetv3_large         1,000,000 single       133           38      174
+noaa_gfs_1p00             1,000,000 double       121           30      333
+noaa_global_hourly_2023   1,000,000 double       100           21       94
+numbers                      10,001 double       142           35      215
+OK: 0 failures

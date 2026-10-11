@@ -1,4 +1,4 @@
-From 177a8e547a25927c62cb1330666aca1bbb374d83 Mon Sep 17 00:00:00 2001
+From b4184502c3a4d006b7529c8f8f1dfbffc65b7f8f Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Fri, 9 Oct 2026 05:16:47 +0200
 Subject: [PATCH 06/13] Build FLONUM-TO-STRING's result without a string stream
@@ -13,10 +13,10 @@ faster.
  1 file changed, 39 insertions(+), 31 deletions(-)
 
 diff --git a/src/code/print.lisp b/src/code/print.lisp
-index 92d6d06d6..cc5dc9383 100644
+index 0f3711228..6ec291741 100644
 --- a/src/code/print.lisp
 +++ b/src/code/print.lisp
-@@ -1579,37 +1579,45 @@ variable: an unreadable object representing the error is printed instead.")
+@@ -1596,37 +1596,45 @@ variable: an unreadable object representing the error is printed instead.")
             (e (if (zerop x)
                    e
                    (+ e (or scale 0))))

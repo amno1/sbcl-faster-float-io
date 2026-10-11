@@ -1,4 +1,6 @@
-/home/arthur/repos/sbcl-parse-float/run-sbcl.sh --script tests/third-party.lisp 1000000
+Measured on 2026-10-11, on mains power, with r7 (built in a temporary worktree,
+sbcl-pf-dispatch, from the same source as sbcl-parse-float with r7).
+/home/arthur/repos/sbcl-pf-dispatch/run-sbcl.sh --script tests/third-party.lisp 1000000
 Round trip, 1,000,000 random floats of each format
   parse-float "1.64546455095796e37" gave 1.6454645509579599e37
   parse-float "4.047154920327923e-33" gave 4.0471549203279234e-33
@@ -15,8 +17,8 @@ parse-number                          0                0
 Speed, ns per string, best of 7
                                    sb-ext:parse-float          parse-float         parse-number     read-from-string
 short (1.5, 12.25)                                 20                  130                  180                   90
-17 digits, ordinary                                50                  210                  330                  160
-17 digits, exponent to +-300                       80                  350                2,140                  200
-single-floats                                      50                  200                  830                  140
+17 digits, ordinary                                40                  210                  330                  170
+17 digits, exponent to +-300                       60                  340                2,070                  200
+single-floats                                      40                  200                  810                  150
 
 OK: sb-ext:parse-float, 0 failures

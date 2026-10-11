@@ -1,7 +1,7 @@
-From ca1a07fb2383b378926e7150cd5b945ca6f6f21e Mon Sep 17 00:00:00 2001
+From 0da905bdb8036bb89298c5d5ee9cad86b08f3035 Mon Sep 17 00:00:00 2001
 From: arthur <arthur.miller@live.com>
 Date: Sat, 10 Oct 2026 10:52:16 +0200
-Subject: [PATCH 3/3] Test integer printing in base 10 and other bases
+Subject: [PATCH 2/2] Test integer printing in base 10 and other bases
 
 ---
  tests/integer-print.pure.lisp | 87 +++++++++++++++++++++++++++++++++++

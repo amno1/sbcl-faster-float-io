@@ -11,6 +11,7 @@
 #           single-roundtrip
 # READ_FAST  branch sbcl-read-fast: the READ-TOKEN fast path (integers.md)
 # INT_PRINT  branch sbcl-int-print: base-10 integer printing (integers.md)
+# REPO      the SBCL repository with all the branches, for make summary
 #
 # Variables the scripts read, all optional, can be given the same way
 # (make THREADS=16 test-long): THREADS, RUNS, LIMIT, DOUBLES, ORIGINAL_REV.
@@ -21,6 +22,7 @@ PARSE_FLOAT ?= $(HOME)/repos/sbcl-parse-float
 BOTH        ?= $(HOME)/repos/sb-simd-512
 READ_FAST   ?= $(HOME)/repos/sbcl-read-fast
 INT_PRINT   ?= $(HOME)/repos/sbcl-int-print
+REPO        ?= $(HOME)/repos/sbcl
 
 RUN = run-sbcl.sh --script
 
@@ -31,11 +33,12 @@ READ_TESTS  = parse-float parse-float-function
 LONG_TESTS  = single-all single-roundtrip
 BENCHMARKS  = benchmark format-bench read-bench real-data
 INT_TESTS   = read-fast int-print
-INT_BENCH   = profile-reader profile-printer read-fast-bench fast-path-misses
+INT_BENCH   = profile-reader profile-printer read-fast-bench fast-path-misses \
+              parse-integer-bench
 
 .PHONY: help test test-print test-read test-long bench test-int bench-int \
         $(PRINT_TESTS) $(READ_TESTS) $(LONG_TESTS) $(BENCHMARKS) \
-        $(INT_TESTS) $(INT_BENCH) supplemental third-party
+        $(INT_TESTS) $(INT_BENCH) supplemental third-party summary
 
 help:
 	@echo "make test          quick tests: test-print and test-read"
@@ -47,6 +50,7 @@ help:
 	@echo "make bench         all benchmarks, before and after"
 	@echo "make test-int      integer tests (READ_FAST and INT_PRINT)"
 	@echo "make bench-int     integer benchmarks, before and after"
+	@echo "make summary       what each patch series changes, and its size"
 	@echo "make <name>        one test or benchmark, e.g. make fixed"
 
 test: test-print test-read
@@ -123,3 +127,9 @@ read-fast-bench:
 	$(PARSE_FLOAT)/$(RUN) benchmarks/real-data.lisp
 	$(READ_FAST)/$(RUN) benchmarks/real-data.lisp
 fast-path-misses: ; $(READ_FAST)/$(RUN) benchmarks/fast-path-misses.lisp
+# PARSE-INTEGER as it is, against copies with r7's changes; any SBCL.
+parse-integer-bench: ; $(PARSE_FLOAT)/$(RUN) benchmarks/parse-integer-bench.lisp
+
+# What each patch series changes (definitions per file) and its size, from
+# the branches in the SBCL repository REPO. Any SBCL.
+summary: ; sbcl --script patch-stats.lisp $(REPO)

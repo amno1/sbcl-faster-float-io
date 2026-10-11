@@ -130,7 +130,6 @@ Tests: [`fixed.lisp`](tests/fixed.lisp) (positions against the original
 [`benchmark.lisp`](benchmarks/benchmark.lisp) for `flonum-to-digits` at position
 -2.
 
-
 ### Stack buffers for `~F`, `~$` and `~E`
 
 `~F` and `~$` through a stack buffer: `flonum-position-decimal` returns the
@@ -214,9 +213,9 @@ decimals:
 | value | old algorithm | round half up | round half to even |
 |------:|--------------:|--------------:|-------------------:|
 |   9.5 |            10 |            10 |                 10 |
-|  10.5 |        **10** |            11 |                 10 |
+|  10.5 |            10 |            11 |                 10 |
 |  11.5 |            12 |            12 |                 12 |
-|  12.5 |        **13** |            13 |                 12 |
+|  12.5 |            13 |            13 |                 12 |
 
 So it matches neither common rule. In detail: the original scans from the most
 significant digit and stops at the first candidate in the closed interval [q,
@@ -331,8 +330,25 @@ digits, or when the fast path returns NIL, it builds the exact value as
 MAKE-FLOAT does (the digits as an integer, scaled by a power of ten) and
 converts that; a number too large for its format signals a `parse-error`, as the
 reader does. On 32-bit platforms only the exact code is used. Since no reader,
-readtable or string stream is involved, it is about 3 to 4.5 times faster than
+readtable or string stream is involved, it is about 3.5 to 5 times faster than
 `read-from-string` on the same strings ([readme.md](readme.md), "Results").
+
+`with-array-data` leaves a `simple-string`, which may be a base string (one
+byte per character) or a character string (four bytes, UTF-32), so a plain
+`char` tests which one before every load. The body after the leading whitespace
+is therefore compiled twice with `string-dispatch`, once for each kind, and the
+type is tested once per call. Both kinds are common: `format nil`,
+`prin1-to-string` and `princ-to-string` return base strings for ASCII text,
+while `read-line` and string literals give character strings. Measured in the
+built SBCL, with and without the dispatch, alternately: 17-digit numbers in
+[`read-bench.lisp`](benchmarks/read-bench.lisp) (base strings) take 50 instead
+of 60 ns, and the lines of [`real-data.lisp`](benchmarks/real-data.lisp)
+(character strings, from `read-line`) 5-12% less. The digits need nothing
+special: `reader.lisp` declares `digit-char-p` inline, and for ASCII it is a
+subtraction and a compare; only above code 1632 does it look up other scripts'
+digits. A version that also checked ASCII digits itself was no faster.
+`parse-integer` gains nothing from the same dispatch:
+[`parse-integer-bench.lisp`](benchmarks/parse-integer-bench.lisp).
 
 Tests: [`parse-float-function.lisp`](tests/parse-float-function.lisp) (against
 the reader, an exact reference, and `parse-integer`'s interface),
